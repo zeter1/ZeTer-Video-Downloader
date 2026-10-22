@@ -46,37 +46,44 @@ class DiagnosticsLifecycleMixin:
                                 force: bool = False) -> None:
         if not force and not self.should_write_problem_logs():
             return
-        if self.problem_runtime_terminal and not terminal:
-            return
         try:
-            updated_at = datetime.now().isoformat(timespec="seconds")
-            payload = {
-                "schema_version": PROBLEM_LOG_SCHEMA_VERSION,
-                "format_version": PROBLEM_LOG_FORMAT_VERSION,
-                "status": status,
-                "stage": stage,
-                "problem_log_session_id": self.problem_log_session_id,
-                "pid": os.getpid(),
-                "started_at": self.problem_runtime_started_at,
-                "updated_at": updated_at,
-                "heartbeat_at": None if terminal else updated_at,
-                "finished_at": updated_at if terminal else None,
-                "last_event_id": self.problem_last_event_id,
-                "is_downloading": getattr(self, "is_downloading", None),
-                "cancel_requested": (
-                    self.cancel_flag.is_set()
-                    if hasattr(self, "cancel_flag") else None
-                ),
-                "session_dir": str(self.problem_session_dir),
-                "session_summary": str(self.problem_session_summary_file),
-                "context": self._compact_problem_context(context or {}),
-            }
-            self._atomic_write_json_file(
-                self.problem_session_active_state_file, payload
-            )
-            self._atomic_write_json_file(self.problem_active_run_state_file, payload)
-            if terminal:
-                self.problem_runtime_terminal = True
+            with self._problem_atomic_lock():
+                if self.problem_runtime_terminal and not terminal:
+                    return
+                if terminal:
+                    # Terminal intent survives even a failed publication. A late
+                    # heartbeat must not erase locally saved shutdown evidence.
+                    self.problem_runtime_terminal = True
+                    self.problem_runtime_terminal_status = status
+                    self.problem_terminal_state_published = False
+                updated_at = datetime.now().isoformat(timespec="seconds")
+                payload = {
+                    "schema_version": PROBLEM_LOG_SCHEMA_VERSION,
+                    "format_version": PROBLEM_LOG_FORMAT_VERSION,
+                    "status": status,
+                    "stage": stage,
+                    "problem_log_session_id": self.problem_log_session_id,
+                    "pid": os.getpid(),
+                    "started_at": self.problem_runtime_started_at,
+                    "updated_at": updated_at,
+                    "heartbeat_at": None if terminal else updated_at,
+                    "finished_at": updated_at if terminal else None,
+                    "last_event_id": self.problem_last_event_id,
+                    "is_downloading": getattr(self, "is_downloading", None),
+                    "cancel_requested": (
+                        self.cancel_flag.is_set()
+                        if hasattr(self, "cancel_flag") else None
+                    ),
+                    "session_dir": str(self.problem_session_dir),
+                    "session_summary": str(self.problem_session_summary_file),
+                    "context": self._compact_problem_context(context or {}),
+                }
+                self._atomic_write_json_file(
+                    self.problem_session_active_state_file, payload
+                )
+                self._atomic_write_json_file(self.problem_active_run_state_file, payload)
+                if terminal:
+                    self.problem_terminal_state_published = True
         except Exception as e:
             self._write_emergency_problem_log(
                 "active_run_state_write_failed", e, {"status": status, "stage": stage}
@@ -348,7 +355,20 @@ class DiagnosticsLifecycleMixin:
     def finalize_problem_diagnostics(self, status: str = "finished",
                                      stage: str = "application_closed",
                                      context: Optional[Dict] = None) -> None:
-        if self.problem_runtime_terminal or not self.should_write_problem_logs():
+        # Serialize close with complete event transactions, including live summary.
+        with self.problem_record_write_lock:
+            self._finalize_problem_diagnostics_serialized(status, stage, context)
+
+    def _finalize_problem_diagnostics_serialized(self, status: str, stage: str,
+                                                context: Optional[Dict]) -> None:
+        if not self.should_write_problem_logs():
+            return
+        if self.problem_runtime_terminal:
+            if not self.problem_terminal_state_published:
+                self._write_active_run_state(
+                    self.problem_runtime_terminal_status or status, stage,
+                    context, terminal=True,
+                )
             return
         try:
             final_context = {

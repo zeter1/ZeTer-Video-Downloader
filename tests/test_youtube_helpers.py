@@ -78,26 +78,10 @@ class YouTubeStrategyCatalogTests(unittest.TestCase):
 
 
 class YouTubeFormatSelectionTests(unittest.TestCase):
-    def test_language_neutral_selector_keeps_ready_1080p_before_split_formats(self):
-        selector = video_format_args()[1]
-        ready = "best[height=1080][protocol^=http][protocol!*=dash]"
-        split = (
-            "bestvideo[height<=1080][protocol^=http][protocol!*=dash]+"
-            "bestaudio[protocol^=http][protocol!*=dash]"
-        )
-        self.assertTrue(selector.startswith(ready + "/"))
-        self.assertLess(selector.index(ready), selector.index(split))
-
-    def test_youtube_russian_ready_1080p_is_first_when_available(self):
-        selector = video_format_args(preferred_audio_language="ru")[1]
-        self.assertTrue(selector.startswith(
-            "best[height=1080][language^=ru][protocol^=http][protocol!*=dash]/"
-        ))
-
     def test_default_1080p_selector_prefers_direct_http_dash(self):
         args = video_format_args(preferred_audio_language="ru")
         selector = args[args.index("-f") + 1]
-        self.assertIn("bestvideo[height<=1080][protocol^=http][protocol!*=dash]", selector)
+        self.assertIn("bestvideo*[height<=1080][protocol^=http][protocol!*=dash]", selector)
         self.assertIn("bestaudio[language^=ru][protocol^=http][protocol!*=dash]", selector)
         self.assertIn("bestaudio[protocol^=http][protocol!*=dash]", selector)
         self.assertNotIn("bestvideo*[height<=1080]+bestaudio", selector)
@@ -125,7 +109,7 @@ class YouTubeFormatSelectionTests(unittest.TestCase):
 
     def test_any_protocol_selector_is_reserved_for_explicit_fallback(self):
         selector = video_format_args(fallback_any=True, preferred_audio_language="ru")[1]
-        self.assertIn("bestvideo*[height<=1080]+bestaudio[language^=ru]", selector)
+        self.assertIn("bestvideo*[height<=1080][language^=?ru]+bestaudio[language^=ru]", selector)
         self.assertIn("bestvideo*[height<=1080]+bestaudio", selector)
 
     def test_progressive_prefers_single_file_http(self):

@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional
 import re
 
+from src.downloads.youtube_retry import cookie_read_failed, has_auth_error, has_critical_error
+
 
 _POSTPROCESS_MARKERS = (
     "error: postprocessing: conversion failed",
@@ -169,6 +171,30 @@ def analyze_yt_dlp_failure(
             "если merge снова падает — перейти к progressive single-file."
         )
         diagnostic_quality = "medium" if (download_plan_lines or selected_format_line) else "basic"
+    elif cookie_read_failed(lower) and ("cookie" in lower or "database" in lower):
+        kind = "browser_cookie_read_failed"
+        stage = "authentication_setup"
+        likely_root_cause = "Не удалось прочитать или скопировать локальную базу cookies браузера."
+        recommended_action = "Пропустить этот источник cookies до новой очереди; оставить другие клиенты."
+        diagnostic_quality = "high"
+    elif has_auth_error(lower):
+        kind = "authentication_required"
+        stage = "authentication"
+        likely_root_cause = "YouTube требует авторизацию или проверку доступа."
+        recommended_action = "Проверить другой client/cookies scope без повторов тех же сетевых вариантов."
+        diagnostic_quality = "high"
+    elif has_critical_error(lower):
+        kind = "video_unavailable"
+        stage = "availability"
+        likely_root_cause = "Сервис явно сообщил о недоступности видео."
+        recommended_action = "Не повторять стратегии для этого видео."
+        diagnostic_quality = "high"
+    elif any(marker in lower for marker in ("getaddrinfo failed", "name or service not known", "nodename nor servname")):
+        kind = "dns_resolution_failed"
+        stage = "network_setup"
+        likely_root_cause = "Не удалось разрешить адрес сервера для выбранного сетевого профиля."
+        recommended_action = "При принудительном IPv6 пропустить его до новой очереди; сохранить IPv4/default."
+        diagnostic_quality = "high"
     elif "requested format is not available" in lower or "format is not available" in lower:
         kind = "yt_dlp_format_unavailable"
         stage = "format_selection"

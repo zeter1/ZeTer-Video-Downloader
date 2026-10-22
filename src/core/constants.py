@@ -11,6 +11,8 @@ MAX_CONCURRENT_DL    = 2
 MAX_SPLIT_HOURS      = 10
 MAX_URLS_PER_SESSION = 500
 DOWNLOAD_TIMEOUT_SEC = 3600   # 1 час
+YT_DLP_MAX_FAILED_ATTEMPTS = 12
+YT_DLP_FAILED_ATTEMPT_BUDGET_SEC = 600
 MERGE_TIMEOUT_SEC    = 3600   # 1 час
 SPLIT_TIMEOUT_SEC    = 1800   # 30 минут
 CONVERT_TIMEOUT_SEC  = 600    # 10 минут
@@ -90,10 +92,12 @@ SOURCE_CODE_FILES = (
     'src/downloads/urls.py',
     'src/downloads/youtube_access.py',
     'src/downloads/youtube_attempt.py',
+    'src/downloads/youtube_candidate_formats.py',
     'src/downloads/youtube_command.py',
     'src/downloads/youtube_downloader.py',
     'src/downloads/youtube_finalize.py',
     'src/downloads/youtube_retry.py',
+    'src/downloads/youtube_queue_policy.py',
     'src/downloads/youtube_strategy.py',
     'src/downloads/youtube_strategy_catalog.py',
     'src/downloads/youtube_success.py',

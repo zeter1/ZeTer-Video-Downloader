@@ -14,6 +14,7 @@ from typing import Dict, List, Optional
 import shutil
 
 from src.core.constants import SUPPORTED_VIDEO_EXTENSIONS, VIDEO_MAX_HEIGHT, VIDEO_TARGET_HEIGHT
+from src.downloads.youtube_candidate_formats import proven_lower_video_format
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,8 @@ class SuccessDecision:
     candidate_path: Optional[str] = None
     candidate_height: int = -1
     candidate_width: int = -1
+    lower_video_format_id: Optional[str] = None
+    semantic_failure: bool = False
 
 
 def handle_successful_attempt(
@@ -66,12 +69,12 @@ def handle_successful_attempt(
             stdout=result.stdout,
             stderr=result.stderr,
         )
-        return SuccessDecision("retry")
+        return SuccessDecision("retry", semantic_failure=True)
 
     valid, validation_reason = app.validate_downloaded_video(temp_video_path, url)
     if not valid:
         app.move_video_to_manual_processing(temp_video_path, validation_reason)
-        return SuccessDecision("retry", last_error=validation_reason)
+        return SuccessDecision("retry", last_error=validation_reason, semantic_failure=True)
 
     width, height = app.get_video_dimensions(temp_video_path)
     dimension_source = "ffprobe"
@@ -127,7 +130,7 @@ def handle_successful_attempt(
             Path(temp_video_path).unlink(missing_ok=True)
         except Exception:
             pass
-        return SuccessDecision("retry")
+        return SuccessDecision("retry", semantic_failure=True)
 
     if height <= 0:
         # The selector itself excludes unknown heights and caps selected formats
@@ -149,7 +152,12 @@ def handle_successful_attempt(
         # Unknown height must not be treated as a low-quality candidate either.
         height = VIDEO_TARGET_HEIGHT
 
-    reached_target = height >= VIDEO_TARGET_HEIGHT
+    # A cinema crop such as 1920x1032 is native Full-HD-width material.
+    # Require both a landscape frame and more than 720 lines: width alone
+    # must not credit a 1920x720 strip or an ordinary 720p/portrait candidate.
+    reached_target = height >= VIDEO_TARGET_HEIGHT or (
+        width >= 1920 and 720 < height <= VIDEO_MAX_HEIGHT and width > height
+    )
     is_progressive = bool(strategy.get("progressive_format"))
     if not reached_target and not is_progressive:
         candidate_score = height if height > 0 else 0
@@ -191,6 +199,7 @@ def handle_successful_attempt(
             candidate_path=best_candidate_path,
             candidate_height=best_candidate_height,
             candidate_width=best_candidate_width,
+            lower_video_format_id=proven_lower_video_format(result.stdout, width, height),
         )
 
     video_path = app.finalize_downloaded_video_file(temp_video_path, video_dir, expected_video_id)

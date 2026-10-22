@@ -27,6 +27,7 @@ from src.core.concurrency import SafeCounter, ThreadSafeList
 
 def initialize_diagnostics_state(app) -> None:
     app.problem_log_lock = Lock()
+    app.problem_record_write_lock = threading.RLock()
     app.problem_atomic_write_lock = threading.RLock()
     app.problem_jsonl_write_lock = threading.RLock()
     app.problem_log_session_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pid{os.getpid()}"
@@ -50,11 +51,14 @@ def initialize_diagnostics_state(app) -> None:
     app.problem_last_disk_validation_status: Optional[str] = None
     app.problem_health_written_keys: Set[str] = set()
     app.problem_last_completion_context: Dict = {}
+    app.problem_download_batches: Dict[str, Dict] = {}
     app.problem_last_event_id: Optional[str] = None
     app.problem_last_event_by_task: Dict[str, str] = {}
     app.problem_runtime_started_at = datetime.now().isoformat(timespec="seconds")
     app.problem_runtime_started_unix = time.time()
     app.problem_runtime_terminal = False
+    app.problem_runtime_terminal_status: Optional[str] = None
+    app.problem_terminal_state_published = False
     app.problem_diagnostics_initialized = False
     app.problem_previous_active_state: Optional[Dict] = app._read_json_object(
         app.problem_active_run_state_file

@@ -13,7 +13,7 @@ import threading
 import time
 
 from src.core.constants import YT_DLP_HEARTBEAT_INTERVAL_SEC, YT_DLP_INACTIVITY_TIMEOUT_SEC, YT_DLP_PROGRESS_MIN_PERCENT_DELTA, YT_DLP_PROGRESS_STALL_TIMEOUT_SEC, YT_DLP_RUNTIME_MAX_CAPTURED_LINES, YT_DLP_ZERO_SPEED_STALL_TIMEOUT_SEC
-from src.core.errors import CommandCancelledError, ProblematicDownloadSkipped
+from src.core.errors import CommandCancelledError, CommandTimeoutError, ProblematicDownloadSkipped
 
 
 _YTDLP_DIAGNOSTIC_LANDMARKS = (
@@ -294,8 +294,13 @@ class SubprocessRunnerMixin:
                         progress_stalled_for >= YT_DLP_PROGRESS_STALL_TIMEOUT_SEC
                         or zero_speed_for >= YT_DLP_ZERO_SPEED_STALL_TIMEOUT_SEC
                     ):
-                        err = subprocess.TimeoutExpired(command, int(progress_stalled_for),
-                                                        output="\n".join(output_lines), stderr="")
+                        zero_speed_timeout = zero_speed_for >= YT_DLP_ZERO_SPEED_STALL_TIMEOUT_SEC
+                        err = CommandTimeoutError(
+                            command,
+                            YT_DLP_ZERO_SPEED_STALL_TIMEOUT_SEC if zero_speed_timeout else YT_DLP_PROGRESS_STALL_TIMEOUT_SEC,
+                            reason="zero_speed_stall" if zero_speed_timeout else "progress_stall",
+                            output="\n".join(output_lines), stderr="",
+                        )
                         self._record_active_ytdlp_snapshot(
                             "yt-dlp пишет вывод, но реальный прогресс скачивания застыл — перезапускаю попытку",
                             "ERROR", "yt_dlp_progress_stalled", command,
@@ -318,8 +323,9 @@ class SubprocessRunnerMixin:
                         raise err
 
                 if now - last_output_time >= YT_DLP_INACTIVITY_TIMEOUT_SEC:
-                    err = subprocess.TimeoutExpired(command, YT_DLP_INACTIVITY_TIMEOUT_SEC,
-                                                    output="\n".join(output_lines), stderr="")
+                    err = CommandTimeoutError(command, YT_DLP_INACTIVITY_TIMEOUT_SEC,
+                                              reason="output_inactivity",
+                                              output="\n".join(output_lines), stderr="")
                     self._record_active_ytdlp_snapshot(
                         f"yt-dlp не отдавал новый вывод {YT_DLP_INACTIVITY_TIMEOUT_SEC} сек — считаю попытку зависшей",
                         "ERROR", "yt_dlp_inactivity_timeout", command,
@@ -335,8 +341,8 @@ class SubprocessRunnerMixin:
                     raise err
 
                 if now - started >= timeout:
-                    err = subprocess.TimeoutExpired(command, timeout,
-                                                    output="\n".join(output_lines), stderr="")
+                    err = CommandTimeoutError(command, timeout, reason="command_timeout",
+                                              output="\n".join(output_lines), stderr="")
                     self._record_active_ytdlp_snapshot(
                         f"Тайм-аут команды после {timeout} сек.",
                         "ERROR", operation, command,

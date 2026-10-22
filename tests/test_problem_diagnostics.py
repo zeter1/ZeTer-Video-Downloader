@@ -33,7 +33,9 @@ class ProblemDiagnosticsTests(unittest.TestCase):
             def flaky_replace(source, destination):
                 calls.append((source, destination))
                 if len(calls) < 3:
-                    raise PermissionError(5, "Access denied")
+                    error = PermissionError(13, "Sharing violation")
+                    error.winerror = 32
+                    raise error
                 return real_replace(source, destination)
 
             with mock.patch.object(os, "replace", side_effect=flaky_replace):

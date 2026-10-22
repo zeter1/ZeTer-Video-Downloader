@@ -1,6 +1,15 @@
 """Shared application exceptions."""
 
 from typing import Dict, Optional
+import subprocess
+
+
+class CommandTimeoutError(subprocess.TimeoutExpired):
+    """TimeoutExpired with the watchdog cause and its effective threshold."""
+
+    def __init__(self, command, timeout, *, reason, output=None, stderr=None):
+        super().__init__(command, timeout, output=output, stderr=stderr)
+        self.reason = reason
 
 
 class CommandCancelledError(Exception):

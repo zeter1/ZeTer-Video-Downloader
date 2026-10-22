@@ -89,14 +89,14 @@ class RetentionStorageMixin:
 
 
     def _replace_atomic_temp_file(self, temp_path: Path, path: Path) -> None:
-        """Учитывает кратковременную блокировку файла Windows индексатором/другим потоком."""
+        """Повторяет только подтверждённый Windows sharing/lock conflict."""
         for attempt in range(PROBLEM_LOG_ATOMIC_REPLACE_RETRIES):
             try:
                 os.replace(temp_path, path)
                 return
             except OSError as error:
                 winerror = getattr(error, "winerror", None)
-                retryable = isinstance(error, PermissionError) or winerror in {5, 32}
+                retryable = winerror in {32, 33}
                 if not retryable or attempt + 1 >= PROBLEM_LOG_ATOMIC_REPLACE_RETRIES:
                     raise
                 time.sleep(
@@ -106,6 +106,8 @@ class RetentionStorageMixin:
 
     def _atomic_write_json_file(self, path: Path, data: Dict) -> None:
         """Потокобезопасно и атомарно записывает JSON рядом с целевым файлом."""
+        # Reject invalid JSON (NaN/Infinity or unserializable values) before I/O.
+        text = json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._problem_atomic_lock():
             temp_path = path.with_name(
@@ -114,8 +116,7 @@ class RetentionStorageMixin:
             )
             try:
                 with open(temp_path, "w", encoding="utf-8", newline="\n") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.write("\n")
+                    f.write(text)
                     f.flush()
                     os.fsync(f.fileno())
                 self._replace_atomic_temp_file(temp_path, path)

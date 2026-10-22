@@ -25,6 +25,10 @@ from src.downloads.youtube_retry import (
     cookie_read_failed, has_auth_error, has_critical_error, has_youtube_retry_error,
 )
 from src.downloads.youtube_strategy_catalog import build_ytdlp_strategy_plan
+from src.downloads.youtube_queue_policy import RetryBudget, auth_scope, queue_capabilities
+from src.downloads.youtube_candidate_formats import (
+    exclude_downloaded_lower_formats, selection_scope,
+)
 
 
 class YouTubeDownloaderMixin:
@@ -54,9 +58,34 @@ class YouTubeDownloaderMixin:
         network_failure_count = 0
         slow_network_failure_count = 0
         attempt_summaries: List[Dict] = []
+        capabilities = queue_capabilities(self)
+        auth_rejected_scopes = set()
+        retry_budget = RetryBudget()
+        downloaded_lower_formats = {}
         for attempt, strategy in enumerate(strategies, 1):
             if success_video or self.cancel_flag.is_set():
                 break
+            if retry_budget.exhausted():
+                self.record_problem(
+                    "Остановлен повторный перебор неуспешных стратегий для одного видео",
+                    "WARNING", "yt_dlp_retry_budget_exhausted",
+                    {"url": url, "failed_attempts": retry_budget.failed_attempts,
+                     "failed_elapsed_sec": round(retry_budget.failed_elapsed_sec, 2),
+                     "saved_candidate": bool(best_lower_candidate_path),
+                     "saved_candidate_height": best_lower_candidate_height},
+                )
+                break
+            skip_reason = capabilities.skip_reason(strategy)
+            if not skip_reason and auth_scope(strategy) in auth_rejected_scopes:
+                skip_reason = "authentication_scope_already_rejected_for_video"
+            if skip_reason:
+                self.record_problem(
+                    "Пропущена стратегия с уже подтверждённым ограничением",
+                    "INFO", "yt_dlp_strategy_skipped",
+                    {"url": url, "strategy": strategy["name"], "reason": skip_reason},
+                    resolved=True,
+                )
+                continue
             if force_progressive_fallback and not strategy.get('progressive_format'):
                 continue
             if skip_risky_any_formats and strategy.get('fallback_format'):
@@ -75,8 +104,11 @@ class YouTubeDownloaderMixin:
             ) = build_ytdlp_download_command(
                 self, url, strategy, default_network_args, download_temp_dir, proxy_args
             )
+            scope = selection_scope(strategy)
+            cmd_v = exclude_downloaded_lower_formats(cmd_v, downloaded_lower_formats.get(scope))
             if attempt > 1:
                 self.log(f"🔄 Попытка {attempt}/{len(strategies)}: {strategy['name']}", "INFO")
+            attempt_started = time.monotonic()
             try:
                 if attempt == 1:
                     log_first_attempt(
@@ -97,11 +129,10 @@ class YouTubeDownloaderMixin:
                     proxy_enabled=proxy_enabled, proxy_url_masked=proxy_url_masked,
                     ejs_args=ejs_args,
                 )
-                attempt_started = time.time()
                 res_v = self.run_command(
                     cmd_v, DOWNLOAD_TIMEOUT_SEC, "yt_dlp_download", attempt_context
                 )
-                attempt_elapsed = time.time() - attempt_started
+                attempt_elapsed = time.monotonic() - attempt_started
 
                 if self.cancel_flag.is_set():
                     self.log("🛑 Загрузка остановлена пользователем", "WARNING")
@@ -120,18 +151,25 @@ class YouTubeDownloaderMixin:
                     )
                     if decision.last_error:
                         last_error = decision.last_error
+                    if getattr(decision, "semantic_failure", False):
+                        retry_budget.failed(attempt_elapsed)
                     if decision.candidate_path is not None:
                         best_lower_candidate_path = decision.candidate_path
                         best_lower_candidate_height = decision.candidate_height
                         best_lower_candidate_width = decision.candidate_width
+                        format_id = getattr(decision, "lower_video_format_id", None)
+                        if format_id:
+                            downloaded_lower_formats.setdefault(scope, set()).add(format_id)
                     if decision.action == "fatal":
                         return None
                     if decision.action == "success":
+                        capabilities.observe(strategy, url, success=True)
                         video_path = decision.video_path
                         success_video = True
                         break
                     continue
                 else:
+                    retry_budget.failed(attempt_elapsed)
                     failure = report_failed_attempt(
                         self, url=url, attempt=attempt, strategy=strategy, command=cmd_v,
                         result=res_v, elapsed_sec=attempt_elapsed,
@@ -148,6 +186,7 @@ class YouTubeDownloaderMixin:
                     slow_network_failure_count = failure.slow_network_failure_count
                     is_network_error = failure.is_network_error
                     failure_analysis = failure.failure_analysis
+                    capabilities.observe(strategy, url, last_error)
 
                     if failure_analysis.get("stage") == "postprocessing_merge":
                         (
@@ -167,6 +206,7 @@ class YouTubeDownloaderMixin:
                         continue
 
                     if has_auth_error(stderr_lower):
+                        auth_rejected_scopes.add(auth_scope(strategy))
                         if attempt < len(strategies):
                             cookie_strategy_used = any(
                                 arg in cmd_v for arg in (
@@ -318,9 +358,23 @@ class YouTubeDownloaderMixin:
             except CommandCancelledError:
                 self.log("🛑 Загрузка остановлена пользователем", "WARNING")
                 break
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as error:
                 # run_command уже остановил процесс и записал подробности в Логи проблем.
-                self.log(f"⏰ Тайм-аут загрузки (>{DOWNLOAD_TIMEOUT_SEC // 60} мин)", "ERROR")
+                retry_budget.failed(time.monotonic() - attempt_started)
+                reason = getattr(error, "reason", "command_timeout")
+                last_error = f"{reason}: {error.timeout} sec"
+                attempt_summaries.append({
+                    "attempt": attempt, "strategy": strategy["name"],
+                    "failure_kind": reason, "failure_stage": "download_watchdog",
+                    "effective_timeout_sec": error.timeout,
+                })
+                reason_text = {
+                    "output_inactivity": "нет нового вывода",
+                    "progress_stall": "нет прогресса",
+                    "zero_speed_stall": "нулевая скорость",
+                    "command_timeout": "превышено время ожидания",
+                }.get(reason, "превышено время ожидания")
+                self.log(f"⏰ Остановлена попытка: {reason_text}; порог {error.timeout} сек", "ERROR")
                 if attempt < len(strategies):
                     continue
                 break
@@ -328,6 +382,7 @@ class YouTubeDownloaderMixin:
                 self.log("🛑 Загрузка прервана пользователем", "WARNING")
                 raise
             except Exception as e:
+                retry_budget.failed(time.monotonic() - attempt_started)
                 self.log(f"❌ Неожиданная ошибка: {str(e)}", "ERROR")
                 self.file_logger.error(f"method_yt_dlp: {traceback.format_exc()}")
                 record_orchestration_exception(

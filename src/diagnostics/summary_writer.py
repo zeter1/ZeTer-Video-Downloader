@@ -13,9 +13,54 @@ from src.core.constants import PROBLEM_LOG_FORMAT_VERSION, PROBLEM_LOG_SCHEMA_VE
 
 
 class DiagnosticsSummaryMixin:
+    def _download_batch_summary_locked(self, status: str, context: Dict) -> Dict:
+        """Keep queue outcomes separate from application-wide diagnostic counts."""
+        count_keys = (
+            "queued_url_count", "downloaded_video_count", "failed_download_count",
+            "problematic_download_count", "converted_audio_count",
+        )
+        batches = self.problem_download_batches
+        has_queue_context = any(key in context for key in count_keys)
+        if status in {"running", "completed", "failed", "cancelled"} and has_queue_context:
+            batch_id = f"{self.current_session_start}|{self.download_start_time}"
+            previous = batches.get(batch_id, {})
+            # A later live-refresh must not reopen a completed queue.
+            if status != "running" or previous.get("status") not in {"completed", "failed", "cancelled"}:
+                batches[batch_id] = {
+                    **previous,
+                    "batch_id": batch_id,
+                    "started_at": self.current_session_start,
+                    "status": status,
+                    **{key: context[key] for key in (*count_keys, "elapsed_sec") if key in context},
+                }
+        results = list(batches.values())
+        totals = {
+            key: sum(int(batch.get(key) or 0) for batch in results)
+            for key in count_keys
+        } if results else {}
+        statuses = {batch["status"] for batch in results}
+        if "failed" in statuses or any(totals.get(key, 0) for key in ("failed_download_count", "problematic_download_count")):
+            outcome = "failed"
+        elif "running" in statuses:
+            outcome = "running"
+        elif "cancelled" in statuses:
+            outcome = "cancelled"
+        else:
+            outcome = "completed" if results else None
+        return {"download_batches": results, "download_totals": totals, "download_outcome": outcome}
+
     def write_problem_session_summary(self, status: str,
                                       context: Optional[Dict] = None,
                                       *, live_refresh: bool = False) -> None:
+        """Serialize direct queue summaries with event transactions and close."""
+        with self.problem_record_write_lock:
+            self._write_problem_session_summary_serialized(
+                status, context, live_refresh=live_refresh,
+            )
+
+    def _write_problem_session_summary_serialized(self, status: str,
+                                                  context: Optional[Dict] = None,
+                                                  *, live_refresh: bool = False) -> None:
         """Пишет summary сессии.
 
         ``live_refresh`` используется после WARNING/ERROR/CRITICAL во время
@@ -27,15 +72,22 @@ class DiagnosticsSummaryMixin:
             return
         self.ensure_problem_log_dirs()
         incoming_context = dict(context or {})
-        if status in {"completed", "cancelled"}:
-            self.problem_last_completion_context = dict(incoming_context)
-        elif status == "finished" and self.problem_last_completion_context:
-            incoming_context = {
-                **self.problem_last_completion_context,
-                **incoming_context,
-            }
         try:
             with self.problem_log_lock:
+                if status in {"completed", "failed", "cancelled"}:
+                    self.problem_last_completion_context = dict(incoming_context)
+                elif status == "finished" and self.problem_last_completion_context:
+                    incoming_context = {
+                        **self.problem_last_completion_context,
+                        **incoming_context,
+                    }
+                batch_summary = self._download_batch_summary_locked(status, incoming_context)
+                if self.problem_runtime_terminal:
+                    status = self.problem_runtime_terminal_status or "finished"
+                    incoming_context = {
+                        **self.problem_last_completion_context,
+                        **incoming_context,
+                    }
                 updated_at = datetime.now().isoformat(timespec="seconds")
                 unresolved = sorted(
                     self.problem_unresolved_entries.values(),
@@ -115,7 +167,7 @@ class DiagnosticsSummaryMixin:
                     "status": status,
                     "updated_at": updated_at,
                     "problem_log_session_id": self.problem_log_session_id,
-                    "session_started_at": self.current_session_start or self.problem_runtime_started_at,
+                    "session_started_at": self.problem_runtime_started_at,
                     "session_dir": str(self.problem_session_dir),
                     "event_log": str(self.problem_events_file),
                     "legacy_event_log": str(self.problem_log_file),
@@ -193,6 +245,7 @@ class DiagnosticsSummaryMixin:
                     },
                     "regression": regression,
                     "context": context_safe,
+                    **batch_summary,
                     "codex_read_order": [
                         str(self.problem_session_summary_file),
                         str(self.problem_latest_json_file),
@@ -239,6 +292,8 @@ class DiagnosticsSummaryMixin:
                     "schema_version": PROBLEM_LOG_SCHEMA_VERSION,
                     "format_version": PROBLEM_LOG_FORMAT_VERSION,
                     "status": status,
+                    "download_outcome": summary["download_outcome"],
+                    "download_totals": summary["download_totals"],
                     "updated_at": updated_at,
                     "problem_log_session_id": self.problem_log_session_id,
                     "session_dir": str(self.problem_session_dir),

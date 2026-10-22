@@ -26,6 +26,7 @@ python scripts/codex_scope.py "описание задачи"
 | Настройки | `core/settings.py` | `core/session_settings.py`, `ui/settings_controls.py` |
 | MP3 | `audio/convert.py`, `merge.py`, `split.py` | `downloads/media_validation.py` |
 | UI | нужный `ui/*.py` | `ui/layout.py` |
+| Уведомление о завершении / блокировка папки | `ui/completion_notification.py`, `downloads/progress.py` | `downloads/manager.py`, `ui/settings_controls.py`, `tests/test_completion_notification.py` |
 | Логи проблем | `diagnostics/reporting.py`, `events.py` | `snapshots.py` |
 | Retention | `diagnostics/retention.py` | `retention_*` |
 | Validator | `diagnostics/validator.py` | `validator_*` |
@@ -58,10 +59,3 @@ python -m unittest discover -s tests
 
 Точечные тесты указаны самим `scripts/codex_scope.py`.
 Полный индекс методов генерируется: `python scripts/generate_code_index.py`.
-
-
-### Уведомления о завершении
-- `src/ui/completion_notification.py` — очередь завершений worker → главный поток Tk,
-  уведомления поверх окон, открытие папки, их позиционирование и закрытие.
-- `src/downloads/progress.py` — передаёт завершение в очередь и восстанавливает UI.
-- `src/ui/settings_controls.py` и `src/ui/layout.py` — блокировка пути сохранения на время задачи.

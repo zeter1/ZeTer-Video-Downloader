@@ -148,6 +148,22 @@ class DiagnosticsReportingMixin:
                        stdout: Optional[str] = None,
                        stderr: Optional[str] = None,
                        resolved: bool = False) -> None:
+        # Sequence allocation, attachments and both mirrors form one transaction.
+        # Acquire it before problem_log_lock, which is also used by summaries.
+        with self.problem_record_write_lock:
+            self._record_problem_serialized(
+                message, level, operation, context, exception, command,
+                stdout, stderr, resolved,
+            )
+
+    def _record_problem_serialized(self, message: str, level: str = "ERROR",
+                       operation: str = "unknown",
+                       context: Optional[Dict] = None,
+                       exception: Optional[BaseException] = None,
+                       command: Optional[List[str]] = None,
+                       stdout: Optional[str] = None,
+                       stderr: Optional[str] = None,
+                       resolved: bool = False) -> None:
         """Пишет структурированный лог, который удобно отдавать нейросети для диагностики."""
         if not self.should_write_problem_logs():
             return

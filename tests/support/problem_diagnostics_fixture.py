@@ -55,6 +55,7 @@ def make_diagnostic_app(root: Path):
     }
     state = {
         "problem_log_lock": threading.Lock(),
+        "problem_record_write_lock": threading.RLock(),
         "problem_atomic_write_lock": threading.RLock(),
         "problem_jsonl_write_lock": threading.RLock(),
         "problem_log_session_id": "diagnostic-test",
@@ -78,11 +79,14 @@ def make_diagnostic_app(root: Path):
         "problem_last_disk_validation_status": None,
         "problem_health_written_keys": set(),
         "problem_last_completion_context": {},
+        "problem_download_batches": {},
         "problem_last_event_id": None,
         "problem_last_event_by_task": {},
         "problem_runtime_started_at": "2026-08-03T12:00:00",
         "problem_runtime_started_unix": time.time(),
         "problem_runtime_terminal": False,
+        "problem_runtime_terminal_status": None,
+        "problem_terminal_state_published": False,
         "problem_previous_active_state": None,
         "problem_logging_enabled": True,
         "settings": {"write_problem_logs": True, "api_token": "TOPSECRET"},

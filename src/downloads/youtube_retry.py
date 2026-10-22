@@ -10,11 +10,13 @@ from typing import Dict, List, Optional, Tuple
 CRITICAL_MARKERS = (
     "this video is unavailable", "video unavailable", "has been removed",
     "copyright", "this live event will begin",
+    "видео недоступно.",
 )
 AUTH_MARKERS = (
     "private video", "members-only", "sign in to confirm", "age-restricted",
-    "confirm your age", "inappropriate", "login required", "cookies",
+    "confirm your age", "inappropriate", "login required",
     "cookie database", "could not copy chrome cookie", "not a bot",
+    "войдите в свой аккаунт",
 )
 COOKIE_READ_FAILURE_MARKERS = (
     "cookie database", "could not copy chrome cookie", "failed to decrypt",
@@ -30,12 +32,25 @@ YOUTUBE_RETRY_MARKERS = (
 )
 
 
+def failure_message_evidence(text: str) -> str:
+    """Keep error messages separate from titles, paths, plans and debug output."""
+    lines = str(text or "").casefold().splitlines()
+    errors = [line for line in lines if re.match(r"^\s*(?:\[[^]]+\]\s*)?error\s*:", line)]
+    if errors:
+        return "\n".join(errors)
+    # Pure helper callers may supply an error message without its ERROR prefix.
+    return "\n".join(line for line in lines if not re.match(
+        r"^\s*\[(?:download|download_plan|debug|info|merger|cookies)\]", line))
+
+
 def has_auth_error(error_lower: str) -> bool:
-    return any(marker in error_lower for marker in AUTH_MARKERS)
+    evidence = failure_message_evidence(error_lower)
+    return any(marker in evidence for marker in AUTH_MARKERS)
 
 
 def has_critical_error(error_lower: str) -> bool:
-    return any(marker in error_lower for marker in CRITICAL_MARKERS)
+    evidence = failure_message_evidence(error_lower)
+    return any(marker in evidence for marker in CRITICAL_MARKERS)
 
 
 def has_youtube_retry_error(error_lower: str) -> bool:
@@ -43,7 +58,8 @@ def has_youtube_retry_error(error_lower: str) -> bool:
 
 
 def cookie_read_failed(error_lower: str) -> bool:
-    return any(marker in error_lower for marker in COOKIE_READ_FAILURE_MARKERS)
+    evidence = failure_message_evidence(error_lower)
+    return any(marker in evidence for marker in COOKIE_READ_FAILURE_MARKERS)
 
 
 def extract_googlevideo_hosts(error_text: str) -> List[str]:

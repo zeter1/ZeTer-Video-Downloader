@@ -6,7 +6,9 @@
 from tkinter import messagebox
 import tkinter as tk
 
-from src.ui.helpers import is_copy_shortcut, is_paste_shortcut
+from src.ui.helpers import (
+    is_copy_shortcut, is_cut_shortcut, is_paste_shortcut, is_select_all_shortcut,
+)
 
 
 class ClipboardMixin:
@@ -56,13 +58,22 @@ class ClipboardMixin:
 
 
     def _on_url_clipboard_shortcut(self, event):
+        state = getattr(event, "state", 0)
+        if not state & 0x4 or state & (0x8 | 0x20000):
+            return None
         keysym = getattr(event, "keysym", "")
         keycode = getattr(event, "keycode", None)
 
-        # Физические C/V на Windows имеют одинаковые keycode независимо от
+        # Физические C/X/A/V на Windows имеют одинаковые keycode независимо от
         # активной EN/RU раскладки; keysym дополнительно покрывает Tk/Linux.
         if is_copy_shortcut(keysym, keycode):
             event.widget.event_generate("<<Copy>>")
+            return "break"
+        if is_cut_shortcut(keysym, keycode):
+            event.widget.event_generate("<<Cut>>")
+            return "break"
+        if is_select_all_shortcut(keysym, keycode):
+            event.widget.event_generate("<<SelectAll>>")
             return "break"
         if is_paste_shortcut(keysym, keycode):
             # Штатная виртуальная вставка Tk корректно заменяет выделение.

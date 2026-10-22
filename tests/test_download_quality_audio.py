@@ -10,15 +10,23 @@ from unittest.mock import Mock
 from src.application import VideoDownloader
 from src.core.session_settings import session_setting
 from src.downloads.youtube_command import video_format_args
+from src.downloads.youtube_candidate_formats import exclude_downloaded_lower_formats
 
 
 class QualityTests(unittest.TestCase):
-    def select(self, formats, progressive=False):
+    def test_seen_low_format_filter_preserves_target_and_then_selects_a_different_reserve(self):
+        args = exclude_downloaded_lower_formats(video_format_args(), {"mp4-720"})
+        target = self.select(self.formats(), format_args=args)
+        self.assertEqual(target['requested_formats'][0]['format_id'], 'webm-1080-best')
+        reserve = self.select([f for f in self.formats() if f['height'] != 1080], format_args=args)
+        self.assertEqual(reserve['format_id'], 'combined')
+
+    def select(self, formats, progressive=False, format_args=None, **format_options):
         try:
             from yt_dlp import YoutubeDL
         except ImportError:
             self.skipTest('yt-dlp is required for format-selection integration tests')
-        args = video_format_args(progressive)
+        args = format_args if format_args is not None else video_format_args(progressive, **format_options)
         with YoutubeDL({'quiet': True, 'no_warnings': True, 'skip_download': True,
                         'format': args[1], 'format_sort_force': True,
                         'format_sort': args[-1].split(',')}) as ydl:
@@ -53,6 +61,46 @@ class QualityTests(unittest.TestCase):
         formats[-1].update(height=1080,width=1920,vbr=6000)
         result=self.select(formats)
         self.assertEqual(result['format_id'],'combined')
+
+    def test_combined_1080_beats_separate_720_in_each_profile(self):
+        for options in ({}, {'fallback_any': True}, {'preferred_audio_language': 'ru'}):
+            with self.subTest(options=options):
+                formats = self.formats()
+                formats = [f for f in formats if f['height'] not in (1080, 2160)]
+                formats[-1].update(height=1080, width=1920, vbr=6000, language='ru')
+                formats[-2]['language'] = 'ru'
+                result = self.select(formats, **options)
+                self.assertEqual(result['format_id'], 'combined')
+                self.assertNotIn('requested_formats', result)
+
+    def test_russian_audio_is_not_discarded_for_english_combined(self):
+        formats = self.formats()
+        formats[-1].update(height=1080, width=1920, vbr=6000, language='en')
+        formats[-2]['language'] = 'ru'
+        for fallback_any in (False, True):
+            with self.subTest(fallback_any=fallback_any):
+                result = self.select(formats, preferred_audio_language='ru',
+                                     fallback_any=fallback_any)
+                selected = result.get('requested_formats', [result])
+                self.assertEqual([f['format_id'] for f in selected],
+                                 ['webm-1080-best', 'audio'])
+
+    def test_default_excludes_hls_and_over_limit_combined(self):
+        formats = self.formats()
+        hls = dict(formats[-1], format_id='hls', height=1080, width=1920,
+                   vbr=8000, protocol='m3u8_native')
+        over_limit = dict(formats[-1], format_id='combined-4k', height=2160,
+                          width=3840, vbr=12000)
+        result = self.select(formats + [hls, over_limit])
+        self.assertEqual([f['format_id'] for f in result['requested_formats']],
+                         ['webm-1080-best', 'audio'])
+
+    def test_combined_without_separate_audio_is_still_available(self):
+        combined = dict(self.formats()[-1], height=1080, width=1920, language='ru')
+        for options in ({}, {'preferred_audio_language': 'ru'}):
+            with self.subTest(options=options):
+                result = self.select([combined], **options)
+                self.assertEqual(result['format_id'], 'combined')
 
 
 class AudioTests(unittest.TestCase):

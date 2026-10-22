@@ -56,6 +56,7 @@ def video_format_args(
     profile = str(format_profile or "").strip().lower()
     language = str(preferred_audio_language or "").strip()
     language_filter = f"[language^={language}]" if language else ""
+    video_language_filter = f"[language^=?{language}]" if language else ""
     if progressive:
         # For YouTube prefer a ready single-file HTTP(S) stream carrying the
         # requested language. Other sites keep the historical selector.
@@ -76,7 +77,7 @@ def video_format_args(
         )
     elif fallback_any or profile == "any":
         preferred_separate = (
-            f"bestvideo*[height<={VIDEO_MAX_HEIGHT}]+bestaudio{language_filter}/"
+            f"bestvideo*[height<={VIDEO_MAX_HEIGHT}]{video_language_filter}+bestaudio{language_filter}/"
             if language_filter else ""
         )
         preferred_combined = (
@@ -90,40 +91,26 @@ def video_format_args(
             + f"best[height<={VIDEO_MAX_HEIGHT}]"
         )
     else:
-        # Preserve the existing 1080p-ready-stream optimization while adding
-        # a YouTube audio-language preference.  Without a language preference,
-        # behavior stays byte-for-byte equivalent to the current main policy:
-        # exact 1080p combined -> split direct streams -> lower combined.
-        video = f"bestvideo[height<={VIDEO_MAX_HEIGHT}][protocol^=http][protocol!*=dash]"
+        # 1080p-first without HLS/MPEG-TS. On YouTube prefer the requested
+        # language when exposed, then preserve the old direct HTTP fallbacks.
+        video = f"bestvideo*[height<={VIDEO_MAX_HEIGHT}][protocol^=http][protocol!*=dash]"
         audio_any = "bestaudio[protocol^=http][protocol!*=dash]"
-        ready_target_any = (
-            f"best[height={VIDEO_MAX_HEIGHT}][protocol^=http][protocol!*=dash]"
-        )
         combined_any = f"best[height<={VIDEO_MAX_HEIGHT}][protocol^=http][protocol!*=dash]"
+        preferred_separate = ""
+        preferred_combined = ""
         if language_filter:
             audio_preferred = f"bestaudio{language_filter}[protocol^=http][protocol!*=dash]"
-            ready_target_preferred = (
-                f"best[height={VIDEO_MAX_HEIGHT}]{language_filter}"
-                f"[protocol^=http][protocol!*=dash]"
-            )
+            # Combined streams participate in quality selection too. Exclude
+            # known foreign-language audio here: yt-dlp keeps a combined
+            # stream's audio and would otherwise discard audio_preferred.
+            video_preferred = f"{video}{video_language_filter}"
             combined_preferred = (
                 f"best[height<={VIDEO_MAX_HEIGHT}]{language_filter}"
                 f"[protocol^=http][protocol!*=dash]"
             )
-            selector = (
-                f"{ready_target_preferred}/"
-                f"{video}+{audio_preferred}/"
-                f"{ready_target_any}/"
-                f"{video}+{audio_any}/"
-                f"{combined_preferred}/"
-                f"{combined_any}"
-            )
-        else:
-            selector = (
-                f"{ready_target_any}/"
-                f"{video}+{audio_any}/"
-                f"{combined_any}"
-            )
+            preferred_separate = f"{video_preferred}+{audio_preferred}/"
+            preferred_combined = f"/{combined_preferred}"
+        selector = f"{preferred_separate}{video}+{audio_any}{preferred_combined}/{combined_any}"
     # With YouTube language preference, restore extractor `lang` before the
     # container/bitrate tie-breakers. Other sites retain the historical sort.
     sort_order = (
@@ -132,6 +119,7 @@ def video_format_args(
         else "height,vext,aext,vbr,abr,res,fps"
     )
     return ["-f", selector, "--format-sort-force", "-S", sort_order]
+
 
 def build_ytdlp_download_command(
     app,

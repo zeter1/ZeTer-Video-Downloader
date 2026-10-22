@@ -17,6 +17,7 @@ from src.core.concurrency import ThreadSafeList
 from src.core.constants import DEFAULT_PROXY_EXAMPLE, LOG_CATEGORY_DOWNLOAD_FAILED, MAX_CONCURRENT_DL, MAX_URLS_PER_SESSION
 from src.core.errors import CommandCancelledError
 from src.core.session_settings import session_setting
+from src.downloads.youtube_queue_policy import reset_queue_capabilities
 
 
 class DownloadManagerMixin:
@@ -39,6 +40,7 @@ class DownloadManagerMixin:
             self.finish_download()
 
     def _run_download_session(self, urls: List[str]) -> None:
+        reset_queue_capabilities(self)
         # FIX #14: ThreadSafeList вместо plain list — устраняет гонку без list_lock
         downloaded_videos: ThreadSafeList = ThreadSafeList()
         failed_urls: ThreadSafeList = ThreadSafeList()

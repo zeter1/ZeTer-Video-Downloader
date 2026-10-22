@@ -49,6 +49,23 @@ class ManagerFailures(unittest.TestCase):
         self.app.finish_download.assert_called_once()
         self.assertEqual(self.app.write_problem_session_summary.call_args.args[0], 'failed')
 
+    def test_finish_follows_conversion_and_optional_merge(self):
+        app = self.app
+        steps = []
+        app.merge_audio = SimpleNamespace(get=lambda: True)
+        app.download_single_video_task.side_effect = (
+            lambda url, index, videos, failed, problematic: videos.append('video.mp4')
+        )
+        app.convert_videos_to_audio.side_effect = lambda videos, target: (
+            steps.append('converted') or ['audio.mp3']
+        )
+        app.sanitize_filename = lambda name: name
+        app.merge_audio_files = Mock(side_effect=lambda *args: steps.append('merged'))
+        app.finish_download.side_effect = lambda: steps.append('finished')
+        app.download_manager(['url'])
+        self.assertEqual(steps, ['converted', 'merged', 'finished'])
+        self.assertEqual(app.download_outcome, 'completed')
+
     def test_cancelled_run_is_not_success(self):
         self.app.cancel_flag.set()
         self.app.download_manager(['url'])
@@ -91,7 +108,10 @@ class ManagerFailures(unittest.TestCase):
         app.download_btn = Mock()
         app.cancel_btn = Mock()
         app.main_progress_frame = Mock()
+        app.save_path_entry = Mock()
+        app.browse_path_btn = Mock()
         app.format_duration = Mock(return_value='0s')
+        app.show_completion_notification = Mock()
         app._finish_download_ui()
         self.assertFalse(app.is_downloading)
         self.assertEqual(app.log.call_args.args[1], 'WARNING')

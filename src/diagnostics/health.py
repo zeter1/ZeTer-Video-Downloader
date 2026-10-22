@@ -207,6 +207,10 @@ class DiagnosticsHealthMixin:
             "# Итог диагностической сессии",
             "",
             f"- Статус: `{summary.get('status')}`",
+            f"- Итог загрузок всех очередей: `{summary.get('download_outcome')}`",
+            f"- Очередей в этом запуске: {len(summary.get('download_batches') or [])}",
+            f"- Не скачано: {(summary.get('download_totals') or {}).get('failed_download_count', 0)}; "
+            f"пропущено как проблемных: {(summary.get('download_totals') or {}).get('problematic_download_count', 0)}",
             f"- Сессия: `{summary.get('problem_log_session_id')}`",
             f"- Обновлено: `{summary.get('updated_at')}`",
             f"- Событий: {summary.get('event_count', 0)}",
@@ -272,12 +276,15 @@ class DiagnosticsHealthMixin:
         }:
             return
         context = summary.get("context") if isinstance(summary.get("context"), dict) else {}
+        totals = summary.get("download_totals") or context
         emergency = summary.get("emergency") if isinstance(summary.get("emergency"), dict) else {}
         record = {
             "schema_version": PROBLEM_LOG_SCHEMA_VERSION,
             "timestamp": summary.get("updated_at"),
             "problem_log_session_id": summary.get("problem_log_session_id"),
             "status": summary.get("status"),
+            "download_outcome": summary.get("download_outcome"),
+            "download_batch_count": len(summary.get("download_batches") or []),
             "event_count": summary.get("event_count"),
             "warning_count": (summary.get("event_counts") or {}).get("WARNING", 0),
             "error_count": (
@@ -295,13 +302,13 @@ class DiagnosticsHealthMixin:
             "resolved_count": summary.get("resolved_count"),
             "unresolved_count": summary.get("unresolved_count"),
             "elapsed_sec": context.get("elapsed_sec"),
-            "queued_url_count": context.get("queued_url_count"),
-            "downloaded_video_count": context.get("downloaded_video_count"),
-            "failed_download_count": context.get("failed_download_count"),
-            "problematic_download_count": context.get(
+            "queued_url_count": totals.get("queued_url_count"),
+            "downloaded_video_count": totals.get("downloaded_video_count"),
+            "failed_download_count": totals.get("failed_download_count"),
+            "problematic_download_count": totals.get(
                 "problematic_download_count"
             ),
-            "converted_audio_count": context.get("converted_audio_count"),
+            "converted_audio_count": totals.get("converted_audio_count"),
             "top_error_signatures": [
                 item.get("error_signature")
                 for item in (summary.get("top_error_signatures") or [])[:10]

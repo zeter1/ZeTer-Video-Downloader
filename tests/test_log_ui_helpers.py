@@ -115,7 +115,7 @@ class LogUiHelperTests(unittest.TestCase):
     def test_russian_paste_shortcut_generates_one_standard_paste_event(self):
         app = VideoDownloader.__new__(VideoDownloader)
         widget = mock.Mock()
-        event = SimpleNamespace(widget=widget, keysym="Cyrillic_em", keycode=0)
+        event = SimpleNamespace(widget=widget, keysym="Cyrillic_em", keycode=0, state=4)
 
         result = app._on_url_clipboard_shortcut(event)
 
@@ -125,7 +125,7 @@ class LogUiHelperTests(unittest.TestCase):
     def test_russian_copy_shortcut_generates_one_standard_copy_event(self):
         app = VideoDownloader.__new__(VideoDownloader)
         widget = mock.Mock()
-        event = SimpleNamespace(widget=widget, keysym="Cyrillic_es", keycode=0)
+        event = SimpleNamespace(widget=widget, keysym="Cyrillic_es", keycode=0, state=4)
 
         result = app._on_url_clipboard_shortcut(event)
 
@@ -138,10 +138,10 @@ class LogUiHelperTests(unittest.TestCase):
         paste_widget = mock.Mock()
 
         copy_result = app._on_url_clipboard_shortcut(
-            SimpleNamespace(widget=copy_widget, keysym="unknown", keycode=67)
+            SimpleNamespace(widget=copy_widget, keysym="unknown", keycode=67, state=4)
         )
         paste_result = app._on_url_clipboard_shortcut(
-            SimpleNamespace(widget=paste_widget, keysym="unknown", keycode=86)
+            SimpleNamespace(widget=paste_widget, keysym="unknown", keycode=86, state=4)
         )
 
         self.assertEqual(copy_result, "break")
@@ -152,7 +152,7 @@ class LogUiHelperTests(unittest.TestCase):
     def test_unrelated_control_shortcut_is_not_intercepted(self):
         app = VideoDownloader.__new__(VideoDownloader)
         widget = mock.Mock()
-        event = SimpleNamespace(widget=widget, keysym="a", keycode=65)
+        event = SimpleNamespace(widget=widget, keysym="z", keycode=90, state=4)
 
         result = app._on_url_clipboard_shortcut(event)
 

@@ -39,3 +39,13 @@ def is_copy_shortcut(keysym: str, keycode: Optional[int]) -> bool:
 def is_paste_shortcut(keysym: str, keycode: Optional[int]) -> bool:
     normalized = (keysym or "").casefold()
     return keycode == ord("V") or normalized in {"v", "м", "cyrillic_em"}
+
+
+def is_cut_shortcut(keysym: str, keycode: Optional[int]) -> bool:
+    normalized = (keysym or "").casefold()
+    return keycode == ord("X") or normalized in {"x", "ч", "cyrillic_che"}
+
+
+def is_select_all_shortcut(keysym: str, keycode: Optional[int]) -> bool:
+    normalized = (keysym or "").casefold()
+    return keycode == ord("A") or normalized in {"a", "ф", "cyrillic_ef"}
