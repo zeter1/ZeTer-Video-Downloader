@@ -1,6 +1,6 @@
 # Windows EXE: сборка, проверка и публикация
 
-[← Документация](README.md) · [Workflow GitHub Actions](../.github/workflows/python-check.yml) · [Релизы](https://github.com/zeter1/Universal-Video-Downloader/releases) · [История изменений](../CHANGELOG.md)
+[← Документация](README.md) · [Workflow GitHub Actions](../.github/workflows/python-check.yml) · [Релизы](https://github.com/zeter1/ZeTer-Video-Downloader/releases) · [История изменений](../CHANGELOG.md)
 
 Документ для сопровождающих. Источник истины для шагов и версий инструментов — **[.github/workflows/python-check.yml](../.github/workflows/python-check.yml)**. Здесь описана текущая политика; не следует копировать пример release-коммита без проверки рабочего дерева.
 
@@ -11,7 +11,7 @@
 - `push` с `[package]` в сообщении коммита: после успешных тестов запускает Windows packaging и публикацию GitHub Release. В этом **же коммите** должен быть обновлён `RELEASE_NOTES_RU.md`; иначе release job завершится ошибкой.
 - **Обычный docs-коммит не должен запускать Windows packaging.** Не добавляйте `[package]` в сообщение без необходимости.
 
-Проверьте [GitHub Actions](https://github.com/zeter1/Universal-Video-Downloader/actions/workflows/python-check.yml) до и после release-изменения. Для релиза критичны не только зелёные unit tests, но и `package-windows` + `publish-release`.
+Проверьте [GitHub Actions](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml) до и после release-изменения. Для релиза критичны не только зелёные unit tests, но и `package-windows` + `publish-release`.
 
 ## 2. Матрица проверок
 
@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | Ubuntu `test` | `compileall`, `unittest discover` | Работу Windows GUI, скачивание с живых сайтов |
 | Windows `package-windows` | Второй прогон тестов, доступность yt-dlp / Deno / FFmpeg / ffprobe, PyInstaller | Работу всех исходных сайтов и любой пользовательской конфигурации |
-| Packaged smoke | `Universal-Video-Downloader.exe --self-test` и SHA-256 | Реальное скачивание, запуск всех диалогов Tk, обновление установленного EXE |
+| Packaged smoke | `ZeTer-Video-Downloader.exe --self-test` и SHA-256 | Реальное скачивание, запуск всех диалогов Tk, обновление установленного EXE |
 | `publish-release` | Публикацию точно собранных EXE и `.sha256.txt` | Безопасность бинарника сверх имеющихся проверок, цифровую подпись |
 
 **Внешние инструменты:** `yt-dlp.exe` и `Deno` скачиваются из закреплённых релизов с проверкой SHA-256; FFmpeg/ffprobe находятся в установленном Windows runner пакете; затем все четыре бинарника упаковываются в `PyInstaller --onefile --windowed`. Актуальные версии смотрите в YAML.
@@ -36,8 +36,10 @@
 3. Актуализируйте `RELEASE_NOTES_RU.md`: версия, дата, реальные изменения, результаты проверок и честные ограничения. Не переносите старые числа тестов без нового выполнения.
 4. Выберите способ: **workflow_dispatch** вручную либо явно подготовленный `[package]`-коммит **вместе** с обновлёнными русскими release notes. Не делайте много package-пушей подряд.
 5. Следите за `test → package-windows → publish-release`. Если произошёл сбой, сначала получите упавший step и его логи; отличайте регрессию кода от сбоя внешнего инструмента, сети, разрешений и workflow. Не отключайте тесты ради публикации.
-6. Убедитесь, что появился `build-<7 первых символов commit>` и в Assets есть **оба** файла: `Universal-Video-Downloader.exe` и `Universal-Video-Downloader.sha256.txt`. Выпуски отмечены как **Prerelease**, поэтому `/releases/latest` может их не показывать.
+6. Убедитесь, что появился `build-<7 первых символов commit>` и в Assets есть **оба** файла: `ZeTer-Video-Downloader.exe` и `ZeTer-Video-Downloader.sha256.txt`. Выпуски отмечены как **Prerelease**, поэтому `/releases/latest` может их не показывать.
 7. Для ручного Windows acceptance-прохода проверьте старт EXE в пользовательской папке, скачивание короткого разрешённого видео, выходной MP4/MP3, отмену и повторную очередь, а при изменениях updater — обновление/восстановление на тестовом EXE. Если ручная проверка не выполнена — записывайте **NOT VERIFIED**.
+
+**Совместимость со старыми сборками:** до ребрендинга выпускался `Universal-Video-Downloader.exe` с привязкой к старым именам репозитория и assets. Этот updater нельзя обновить автоматически только переименованием репозитория; требуется разовая ручная установка `ZeTer-Video-Downloader.exe` в существующую папку программы, без удаления пользовательских данных.
 
 ## 4. Целостность и идентификатор сборки
 
@@ -46,8 +48,8 @@ Workflow встраивает в EXE `build_info.json` с точным полн�
 Рядом с EXE публикуется контрольная сумма:
 
 ```powershell
-(Get-FileHash .\Universal-Video-Downloader.exe -Algorithm SHA256).Hash
-Get-Content .\Universal-Video-Downloader.sha256.txt
+(Get-FileHash .\ZeTer-Video-Downloader.exe -Algorithm SHA256).Hash
+Get-Content .\ZeTer-Video-Downloader.sha256.txt
 ```
 
 Сравнивайте 64 шестнадцатеричных символа в начале строки `.sha256.txt` с результатом `Get-FileHash` **из того же выпуска**. Хеш обнаруживает расхождение с опубликованным файлом, но **не** заменяет проверку происхождения файла или code signing.
@@ -59,7 +61,7 @@ src/ui/update_controls.py  → проверка/подтверждение в и
 src/core/app_updates.py   → GitHub Releases (включая prereleases)
                          → выбор валидного build-* c SHA-256 digest
                          → скачивание во временный .part + проверка хеша
-                         → staging: Обновления/build-.../Universal-Video-Downloader.exe
+                         → staging: Обновления/build-.../ZeTer-Video-Downloader.exe
                          → отдельный apply-update.ps1 после закрытия приложения
                          → резервное копирование/восстановление при ошибке
 ```

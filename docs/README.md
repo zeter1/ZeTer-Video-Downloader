@@ -1,6 +1,6 @@
-# Документация Universal Video Downloader
+# Документация ZeTer Video Downloader
 
-[← Главная (RU)](../README.md) · [README in English](../README_EN.md) · [Скачать Windows EXE](https://github.com/zeter1/Universal-Video-Downloader/releases)
+[← Главная (RU)](../README.md) · [README in English](../README_EN.md) · [Скачать Windows EXE](https://github.com/zeter1/ZeTer-Video-Downloader/releases)
 
 Эта папка разделена по задачам: **пользователь → устранение проблемы**, **разработчик → конкретный owner-модуль**, **сопровождающий → сборка и выпуск**. Не нужно читать всё подряд.
 
@@ -13,7 +13,7 @@
 | Как предоставить сведения об ошибке без раскрытия секретов | [Поддержка](../SUPPORT.md) · [Безопасность](../SECURITY.md) |
 | Что изменилось в программе | [История изменений](../CHANGELOG.md) |
 
-**Различайте два режима:** готовый Windows x64 `Universal-Video-Downloader.exe` содержит свои копии yt-dlp, FFmpeg, ffprobe и Deno; при запуске из исходников зависимости устанавливаются отдельно. Для EXE не требуется установка Python.
+**Различайте два режима:** готовый Windows x64 `ZeTer-Video-Downloader.exe` содержит свои копии yt-dlp, FFmpeg, ffprobe и Deno; при запуске из исходников зависимости устанавливаются отдельно. Для EXE не требуется установка Python.
 
 ## Разработчику и ChatGPT/Codex
 

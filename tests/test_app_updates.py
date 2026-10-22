@@ -97,6 +97,23 @@ class UpdateTests(unittest.TestCase):
             ):
                 self.assertIsNone(updates.installed_build_tag())
 
+    def test_renamed_application_identity(self):
+        self.assertEqual(updates.REPOSITORY, "zeter1/ZeTer-Video-Downloader")
+        self.assertEqual(updates.EXE_NAME, "ZeTer-Video-Downloader.exe")
+        self.assertIn("/ZeTer-Video-Downloader/", updates.RELEASES_URL)
+
+    def test_legacy_build_manifest_is_recognized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "build_info.json").write_text(json.dumps({
+                "repository": "zeter1/Universal-Video-Downloader",
+                "commit": "b" * 40,
+                "tag": "build-bbbbbbb",
+            }), encoding="utf-8")
+            with mock.patch.object(updates.sys, "frozen", True, create=True), mock.patch.object(
+                updates.sys, "_MEIPASS", tmp, create=True
+            ):
+                self.assertEqual(updates.installed_build_tag(), "build-bbbbbbb")
+
 
 if __name__ == "__main__":
     unittest.main()

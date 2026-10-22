@@ -1,10 +1,10 @@
-# Поддержка Universal Video Downloader
+# Поддержка ZeTer Video Downloader
 
-[← Главная](README.md) · [Подробная диагностика](docs/TROUBLESHOOTING.md) · [Создать issue](https://github.com/zeter1/Universal-Video-Downloader/issues/new/choose) · [Правила безопасности](SECURITY.md)
+[← Главная](README.md) · [Подробная диагностика](docs/TROUBLESHOOTING.md) · [Создать issue](https://github.com/zeter1/ZeTer-Video-Downloader/issues/new/choose) · [Правила безопасности](SECURITY.md)
 
 ## Начните с режима запуска
 
-**Готовый EXE для Windows x64:** yt-dlp, FFmpeg, ffprobe и Deno встроены в опубликованную сборку. Отдельная установка Python, обновление `pip` или добавление FFmpeg в `PATH` **не исправят инструменты внутри EXE**. Если сбой связан с изменением сайта, проверьте более свежую сборку на [Releases](https://github.com/zeter1/Universal-Video-Downloader/releases).
+**Готовый EXE для Windows x64:** yt-dlp, FFmpeg, ffprobe и Deno встроены в опубликованную сборку. Отдельная установка Python, обновление `pip` или добавление FFmpeg в `PATH` **не исправят инструменты внутри EXE**. Если сбой связан с изменением сайта, проверьте более свежую сборку на [Releases](https://github.com/zeter1/ZeTer-Video-Downloader/releases).
 
 **Запуск из исходников:** используйте Python-окружение из [README.md](README.md#запуск-из-исходников), проверьте `ffmpeg -version`, `ffprobe -version` и `python -m yt_dlp --version`. При необходимости обновите библиотеку **в активном окружении**.
 

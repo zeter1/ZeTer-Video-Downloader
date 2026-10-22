@@ -1,5 +1,5 @@
 name: Сообщить об ошибке
-description: Сообщение о проблеме Universal Video Downloader
+description: Сообщение о проблеме ZeTer Video Downloader
 title: "[Bug] "
 body:
   - type: markdown

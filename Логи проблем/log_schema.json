@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "skachat_video_online.problem_event.schema.v4",
-  "title": "Skachat_video_online Codex problem event",
+  "title": "ZeTer Video Downloader Codex problem event",
   "x-supported-source-schema-versions": [
     3,
     4

@@ -106,7 +106,7 @@ class VideoDownloader(
 ):
     def __init__(self, root):
         self.root = root
-        self.root.title(f"Универсальный видео-загрузчик v{APP_VERSION} ({installed_build_tag() or 'исходники'})")
+        self.root.title(f"ZeTer Video Downloader v{APP_VERSION} ({installed_build_tag() or 'исходники'})")
         self.root.state('zoomed')
 
         # Инициализация разбита по owner-модулям: Codex может читать только

@@ -12,10 +12,12 @@ import subprocess
 import sys
 import urllib.request
 
-REPOSITORY = "zeter1/Universal-Video-Downloader"
+REPOSITORY = "zeter1/ZeTer-Video-Downloader"
+# Permit authentic build identities stamped before the repository rename.
+LEGACY_REPOSITORY = "zeter1/Universal-Video-Downloader"
 RELEASES_URL = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=50"
 RELEASES_PAGE = f"https://github.com/{REPOSITORY}/releases"
-EXE_NAME = "Universal-Video-Downloader.exe"
+EXE_NAME = "ZeTer-Video-Downloader.exe"
 _TAG = re.compile(r"build-[a-f0-9]{7}$")
 _DIGEST = re.compile(r"sha256:([a-fA-F0-9]{64})$")
 
@@ -29,7 +31,7 @@ def installed_build_tag():
         payload = json.loads(manifest.read_text(encoding="utf-8-sig"))
         tag = payload.get("tag", "")
         commit = payload.get("commit", "")
-        if (payload.get("repository") == REPOSITORY and _TAG.fullmatch(tag)
+        if (payload.get("repository") in (REPOSITORY, LEGACY_REPOSITORY) and _TAG.fullmatch(tag)
                 and re.fullmatch(r"[0-9a-f]{40}", commit)
                 and tag == "build-" + commit[:7]):
             return tag
@@ -81,7 +83,7 @@ def check_for_update(current_tag, opener=None):
     request = urllib.request.Request(
         RELEASES_URL, headers={
             "Accept": "application/vnd.github+json",
-            "User-Agent": "Universal-Video-Downloader-Updater",
+            "User-Agent": "ZeTer-Video-Downloader-Updater",
         },
     )
     opener = opener or urllib.request.urlopen
@@ -110,7 +112,7 @@ def download_verified(release, directory, opener=None):
     total = 0
     try:
         with opener(urllib.request.Request(
-            expected_url, headers={"User-Agent": "Universal-Video-Downloader-Updater"}
+            expected_url, headers={"User-Agent": "ZeTer-Video-Downloader-Updater"}
         ), timeout=45) as response, open(partial, "wb") as output:
             while True:
                 block = response.read(1024 * 1024)

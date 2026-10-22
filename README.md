@@ -1,15 +1,15 @@
 **Язык / Language:** **Русский** · [English](README_EN.md)
 
-# Universal Video Downloader
+# ZeTer Video Downloader
 
-[![Python checks](https://github.com/zeter1/Universal-Video-Downloader/actions/workflows/python-check.yml/badge.svg)](https://github.com/zeter1/Universal-Video-Downloader/actions/workflows/python-check.yml)
-[![Releases](https://img.shields.io/badge/Windows-EXE%20Releases-blue?logo=github)](https://github.com/zeter1/Universal-Video-Downloader/releases)
+[![Python checks](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml/badge.svg)](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml)
+[![Releases](https://img.shields.io/badge/Windows-EXE%20Releases-blue?logo=github)](https://github.com/zeter1/ZeTer-Video-Downloader/releases)
 
-**Universal Video Downloader** — настольная программа для Windows, которая скачивает видео с сайтов, поддерживаемых [yt-dlp](https://github.com/yt-dlp/yt-dlp), сохраняет видео в **MP4 до 1080p** и автоматически создаёт **MP3** из успешно скачанных роликов.
+**ZeTer Video Downloader** — настольная программа для Windows, которая скачивает видео с сайтов, поддерживаемых [yt-dlp](https://github.com/yt-dlp/yt-dlp), сохраняет видео в **MP4 до 1080p** и автоматически создаёт **MP3** из успешно скачанных роликов.
 
 Программа объединяет загрузку, обработку медиа, очередь ссылок, проверку результатов и диагностику в одном интерфейсе. Для обычного использования достаточно готового EXE: **Python, FFmpeg и другие инструменты отдельно устанавливать не требуется**.
 
-**[📥 Скачать для Windows](https://github.com/zeter1/Universal-Video-Downloader/releases)** · **[📖 История изменений](CHANGELOG.md)** · **[🐞 Сообщить об ошибке](https://github.com/zeter1/Universal-Video-Downloader/issues/new/choose)**
+**[📥 Скачать для Windows](https://github.com/zeter1/ZeTer-Video-Downloader/releases)** · **[📖 История изменений](CHANGELOG.md)** · **[🐞 Сообщить об ошибке](https://github.com/zeter1/ZeTer-Video-Downloader/issues/new/choose)**
 
 > **Важно:** опубликованные Windows-сборки имеют статус **Prerelease** и пока не подписаны коммерческим сертификатом. Работа сайтов зависит от их правил, доступности сети и поддержки в yt-dlp.
 
@@ -30,13 +30,15 @@
 
 ## Быстрый старт
 
-**Поддерживаемая сборка:** Windows x64, отдельный файл `Universal-Video-Downloader.exe` (без установщика).
+**Поддерживаемая сборка:** Windows x64, отдельный файл `ZeTer-Video-Downloader.exe` (без установщика).
 
-1. Откройте **[GitHub Releases](https://github.com/zeter1/Universal-Video-Downloader/releases)**. Поскольку сборки помечены *Prerelease*, выбирайте свежий опубликованный выпуск в списке релизов, а не полагайтесь на ссылку GitHub `/releases/latest`.
-2. В разделе **Assets** скачайте `Universal-Video-Downloader.exe`. Файл `Universal-Video-Downloader.sha256.txt` нужен только для самостоятельной проверки контрольной суммы.
-3. Поместите EXE в **отдельную папку с правом записи**, например `Документы\Universal-Video-Downloader`, и запустите его. Не рекомендуется папка `Program Files`: приложение хранит настройки и журналы рядом с EXE.
+1. Откройте **[GitHub Releases](https://github.com/zeter1/ZeTer-Video-Downloader/releases)**. Поскольку сборки помечены *Prerelease*, выбирайте свежий опубликованный выпуск в списке релизов, а не полагайтесь на ссылку GitHub `/releases/latest`.
+2. В разделе **Assets** скачайте `ZeTer-Video-Downloader.exe`. Файл `ZeTer-Video-Downloader.sha256.txt` нужен только для самостоятельной проверки контрольной суммы.
+3. Поместите EXE в **отдельную папку с правом записи**, например `Документы\ZeTer-Video-Downloader`, и запустите его. Не рекомендуется папка `Program Files`: приложение хранит настройки и журналы рядом с EXE.
 4. Вставьте URL видео (каждая ссылка — с новой строки), выберите папку сохранения и нажмите **«▶ Скачать все»**.
 5. Найдите результат в подпапках **`Видео`** и **`Аудио`** выбранного каталога.
+
+> **Переход со старого названия:** если у вас установлен `Universal-Video-Downloader.exe`, скачайте новый `ZeTer-Video-Downloader.exe` из Releases и **один раз обновитесь вручную**: закройте старую программу и положите новый EXE в ту же папку. Тогда каталоги `Настройки`, `Логи скачивания`, `Логи проблем` и история останутся на месте. Старый механизм обновления не распознаёт переименованные ассеты нового репозитория; не удаляйте данные и не запускайте обе версии одновременно.
 
 В Windows-сборку через PyInstaller включены **yt-dlp, FFmpeg, ffprobe и Deno**. Не нужно отдельно скачивать Python или устанавливать пакет `requirements.txt`. Для загрузки нужен интернет; некоторые сайты могут требовать авторизацию или быть недоступны в вашей сети.
 
@@ -121,7 +123,7 @@ URL → yt-dlp → выбор формата (приоритет 1080p, макс
 
 ## Обновления приложения
 
-Готовые сборки публикуются на [GitHub Releases](https://github.com/zeter1/Universal-Video-Downloader/releases) с тегами вида `build-7ab3f9f`. Этот идентификатор — **ревизия сборки**, а не номер пользовательской версии; отображаемая версия приложения может оставаться `6.3` между разными сборками.
+Готовые сборки публикуются на [GitHub Releases](https://github.com/zeter1/ZeTer-Video-Downloader/releases) с тегами вида `build-7ab3f9f`. Этот идентификатор — **ревизия сборки**, а не номер пользовательской версии; отображаемая версия приложения может оставаться `6.3` между разными сборками.
 
 - **Автоматическая проверка:** по умолчанию после запуска EXE проверяет опубликованные релизы в фоне. Отключается галочкой **«Проверять обновления при запуске»**.
 - **Ручная проверка:** кнопка **«🔄 Проверить обновления»**.
@@ -135,11 +137,11 @@ URL → yt-dlp → выбор формата (приоритет 1080p, макс
 
 ## Проверка скачанного EXE
 
-При желании скачайте рядом с EXE файл `Universal-Video-Downloader.sha256.txt` из **того же релиза**. В PowerShell, находясь в папке с двумя файлами:
+При желании скачайте рядом с EXE файл `ZeTer-Video-Downloader.sha256.txt` из **того же релиза**. В PowerShell, находясь в папке с двумя файлами:
 
 ```powershell
-(Get-FileHash .\Universal-Video-Downloader.exe -Algorithm SHA256).Hash
-Get-Content .\Universal-Video-Downloader.sha256.txt
+(Get-FileHash .\ZeTer-Video-Downloader.exe -Algorithm SHA256).Hash
+Get-Content .\ZeTer-Video-Downloader.sha256.txt
 ```
 
 Сравните полученные 64 шестнадцатеричных символа со значением в начале файла `.sha256.txt`. **Они должны совпадать.** Контрольная сумма выявляет расхождение файла с опубликованной сборкой, но сама по себе не заменяет проверку доверия к источнику и цифровую подпись.
@@ -151,8 +153,8 @@ Get-Content .\Universal-Video-Downloader.sha256.txt
 **Требования:** Windows, Python **3.12** (версия, используемая в CI), Git, [FFmpeg](https://ffmpeg.org/) с `ffmpeg` и `ffprobe` в `PATH`. `yt-dlp` устанавливается из `requirements.txt`. Для некоторых сценариев YouTube дополнительно полезен [Deno](https://deno.com/) или Node.js.
 
 ```powershell
-git clone https://github.com/zeter1/Universal-Video-Downloader.git
-cd Universal-Video-Downloader
+git clone https://github.com/zeter1/ZeTer-Video-Downloader.git
+cd ZeTer-Video-Downloader
 
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -182,7 +184,7 @@ ffprobe -version
 
 Для воспроизводимой ошибки укажите версию **`build-...`**, Windows, сайт, ожидаемое и фактическое поведение, шаги воспроизведения и **обезличенный** фрагмент логов. Начните с `Логи проблем/latest_run.json` и нужной папки `Логи проблем/Сессии/<запуск>/`, если диагностика включена.
 
-**[Инструкция для отчёта об ошибке](SUPPORT.md)** · **[Создать issue](https://github.com/zeter1/Universal-Video-Downloader/issues/new/choose)** · **[Правила безопасности](SECURITY.md)**
+**[Инструкция для отчёта об ошибке](SUPPORT.md)** · **[Создать issue](https://github.com/zeter1/ZeTer-Video-Downloader/issues/new/choose)** · **[Правила безопасности](SECURITY.md)**
 
 > **Приватность:** перед отправкой логов удалите cookie, токены, заголовки авторизации, приватные URL и чувствительные локальные пути. Лог может содержать сведения об используемых сайтах и файлах.
 
@@ -225,7 +227,7 @@ scripts/             инструменты навигации и проверк
 .\.venv\Scripts\python.exe scripts/check_codex_efficiency.py
 ```
 
-В [GitHub Actions](https://github.com/zeter1/Universal-Video-Downloader/actions/workflows/python-check.yml) обычные изменения Python-кода запускают компиляцию и тесты на Ubuntu. **Windows EXE создаётся отдельно**: при ручном запуске workflow либо push-коммите с `[package]` после успешных тестов. Windows-job повторно запускает offline-тесты, собирает EXE через PyInstaller, выполняет `--self-test` встроенных инструментов и публикует EXE и SHA-256 в GitHub Release.
+В [GitHub Actions](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml) обычные изменения Python-кода запускают компиляцию и тесты на Ubuntu. **Windows EXE создаётся отдельно**: при ручном запуске workflow либо push-коммите с `[package]` после успешных тестов. Windows-job повторно запускает offline-тесты, собирает EXE через PyInstaller, выполняет `--self-test` встроенных инструментов и публикует EXE и SHA-256 в GitHub Release.
 
 Изменение только README **не публикует новый бинарник**. Релизные сборки проверяются в CI, однако автотесты не гарантируют работоспособность всех внешних сайтов и не заменяют ручную проверку графического интерфейса и реального обновления EXE.
 
@@ -252,4 +254,4 @@ scripts/             инструменты навигации и проверк
 
 ---
 
-[↑ К началу](#universal-video-downloader) · [English version](README_EN.md)
+[↑ К началу](#zeter-video-downloader) · [English version](README_EN.md)

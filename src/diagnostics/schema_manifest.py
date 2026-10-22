@@ -86,7 +86,7 @@ class DiagnosticsSchemaMixin:
         return {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "skachat_video_online.problem_event.schema.v4",
-            "title": "Skachat_video_online Codex problem event",
+            "title": "ZeTer Video Downloader Codex problem event",
             "x-supported-source-schema-versions": [3, 4],
             "x-legacy-normalizer": "problem_log_validator.normalize_event_record",
             "type": "object",
@@ -184,7 +184,7 @@ class DiagnosticsSchemaMixin:
             "schema_version": PROBLEM_LOG_SCHEMA_VERSION,
             "format_version": PROBLEM_LOG_FORMAT_VERSION,
             "supported_source_schema_versions": [3, 4],
-            "app_name": "Skachat_video_online",
+            "app_name": "ZeTer Video Downloader",
             "app_version": APP_VERSION,
             "problem_log_session_id": self.problem_log_session_id,
             "created_at": datetime.now().isoformat(timespec="seconds"),
