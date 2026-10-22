@@ -50,14 +50,19 @@ class DownloadTempRootTests(unittest.TestCase):
         for root in self.roots:
             root.mkdir()
         real_rmdir = Path.rmdir
+        blocked = []
 
         def locked(path):
-            if path == self.roots[0]:
+            # The implementation resolves the video root. On Windows its
+            # canonical spelling may differ from tempfile's original path.
+            if path.name == self.roots[0].name and path.parent.samefile(self.video_dir):
+                blocked.append(path)
                 raise PermissionError('fixture lock')
             return real_rmdir(path)
 
         with patch.object(Path, 'rmdir', locked):
             self.assertEqual(self.app.cleanup_empty_download_temp_roots(self.video_dir), 1)
+        self.assertEqual(len(blocked), 1, 'fixture must intercept the intended folder')
         self.assertTrue(self.roots[0].is_dir())
         self.assertFalse(self.roots[1].exists())
         self.app.record_problem.assert_called_once()
@@ -68,10 +73,12 @@ class DownloadTempRootTests(unittest.TestCase):
         for root in self.roots:
             root.mkdir()
         real_lstat = Path.lstat
+        intercepted = []
 
         def reparse(path, *args, **kwargs):
             info = real_lstat(path, *args, **kwargs)
-            if path == self.roots[0]:
+            if path.name == self.roots[0].name and path.parent.samefile(self.video_dir):
+                intercepted.append(path)
                 return SimpleNamespace(st_mode=info.st_mode,
                     st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
                     st_dev=info.st_dev, st_ino=info.st_ino)
@@ -79,6 +86,7 @@ class DownloadTempRootTests(unittest.TestCase):
 
         with patch.object(Path, 'lstat', reparse):
             self.assertEqual(self.app.cleanup_empty_download_temp_roots(self.video_dir), 1)
+        self.assertGreaterEqual(len(intercepted), 1, 'fixture must mark the intended folder')
         self.assertTrue(self.roots[0].is_dir())
         self.assertFalse(self.roots[1].exists())
 
