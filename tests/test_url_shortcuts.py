@@ -28,10 +28,14 @@ class UrlShortcutTests(unittest.TestCase):
         for keysym, keycode, expected in cases:
             for symbol in (keysym, keysym.upper()):
                 with self.subTest(symbol=symbol, keycode=keycode):
-                    self.assertEqual(self.dispatch(symbol, keycode), ("break", [expected]))
+                    # Windows Tk maps NumLock to Mod1 (0x8), not Alt.
+                    for state in (4, 6, 12, 14):
+                        with self.subTest(state=state):
+                            self.assertEqual(self.dispatch(symbol, keycode, state),
+                                             ("break", [expected]))
 
     def test_unrelated_keys_and_unsupported_modifiers_pass_through(self):
-        for state in (0, 1, 8, 12, 0x20004):
+        for state in (0, 1, 8, 20, 0x20004):
             for symbol, code in (("c", 67), ("x", 88), ("a", 65), ("v", 86)):
                 with self.subTest(state=state, symbol=symbol):
                     self.assertEqual(self.dispatch(symbol, code, state), (None, []))

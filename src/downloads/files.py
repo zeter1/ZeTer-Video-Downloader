@@ -7,8 +7,10 @@ from typing import Optional
 from pathlib import Path
 from typing import Set
 import hashlib
+import errno
 import re
 import shutil
+import stat
 import time
 
 from src.core.constants import SUPPORTED_VIDEO_EXTENSIONS
@@ -143,6 +145,61 @@ class DownloadFilesMixin:
         key = expected_video_id or hashlib.md5(url.strip().encode('utf-8')).hexdigest()[:12]
         safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", key).strip("._") or "video"
         return video_dir / "_temp_downloads" / f"{safe_key}_{time.time_ns()}"
+
+
+    def cleanup_empty_download_temp_roots(self, video_dir: Path) -> int:
+        """После остановки workers удалить только два пустых служебных корня.
+
+        rmdir атомарно отказывается удалять непустой каталог: незавершённые
+        загрузки, чужие файлы и материалы восстановления остаются целиком.
+        """
+        removed = 0
+        try:
+            video_dir = Path(video_dir)
+            root_stat = video_dir.lstat()
+            reparse = stat.FILE_ATTRIBUTE_REPARSE_POINT
+            if (not stat.S_ISDIR(root_stat.st_mode)
+                    or getattr(root_stat, 'st_file_attributes', 0) & reparse):
+                return 0
+            video_root = video_dir.resolve(strict=True)
+            for name in ('_temp_downloads', '_quality_candidates'):
+                candidate = video_root / name
+                try:
+                    candidate_stat = candidate.lstat()
+                    if (not stat.S_ISDIR(candidate_stat.st_mode)
+                            or getattr(candidate_stat, 'st_file_attributes', 0) & reparse
+                            or candidate.resolve(strict=True).parent != video_root):
+                        continue
+                    # Recheck the parent immediately before the empty-only removal.
+                    parent_stat = video_root.lstat()
+                    if (not stat.S_ISDIR(parent_stat.st_mode)
+                            or getattr(parent_stat, 'st_file_attributes', 0) & reparse
+                            or (parent_stat.st_dev, parent_stat.st_ino) != (root_stat.st_dev, root_stat.st_ino)):
+                        break
+                    current_stat = candidate.lstat()
+                    if (not stat.S_ISDIR(current_stat.st_mode)
+                            or getattr(current_stat, 'st_file_attributes', 0) & reparse
+                            or (current_stat.st_dev, current_stat.st_ino) != (candidate_stat.st_dev, candidate_stat.st_ino)):
+                        continue
+                    candidate.rmdir()
+                    removed += 1
+                except FileNotFoundError:
+                    continue
+                except OSError as error:
+                    if error.errno in (errno.ENOTEMPTY, errno.EEXIST) or getattr(error, 'winerror', None) == 145:
+                        continue
+                    self.record_problem(
+                        'Не удалось удалить пустую служебную папку', 'WARNING',
+                        'cleanup_empty_download_temp_roots', {'directory_name': name}, error,
+                    )
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            self.record_problem(
+                'Не удалось проверить служебные папки загрузки', 'WARNING',
+                'cleanup_empty_download_temp_roots', {}, error,
+            )
+        return removed
 
 
     def cleanup_stale_download_temp_dirs(self, video_dir: Path) -> int:

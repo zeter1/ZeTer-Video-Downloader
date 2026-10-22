@@ -73,6 +73,33 @@ class ManagerFailures(unittest.TestCase):
         self.assertEqual(self.app.download_outcome, 'cancelled')
         self.app.finish_download.assert_called_once()
 
+    def test_empty_temp_roots_removed_after_workers_finish(self):
+        video_dir = Path(self.temp.name) / 'Видео'
+        roots = [video_dir / name for name in ('_temp_downloads', '_quality_candidates')]
+
+        def completed_job(*args):
+            for root in roots:
+                job = root / 'current_job'
+                job.mkdir(parents=True)
+                job.rmdir()
+            (video_dir / 'готовое.mp4').write_bytes(b'published output')
+
+        self.app.download_single_video_task.side_effect = completed_job
+        self.app.download_manager(['url'])
+        self.assertTrue(all(not root.exists() for root in roots))
+        self.assertEqual((video_dir / 'готовое.mp4').read_bytes(), b'published output')
+
+    def test_empty_temp_roots_also_pruned_on_session_failure(self):
+        video_dir = Path(self.temp.name) / 'Видео'
+        roots = [video_dir / name for name in ('_temp_downloads', '_quality_candidates')]
+        for root in roots:
+            root.mkdir(parents=True)
+        self.app._run_download_session = Mock(side_effect=RuntimeError('fixture failure'))
+        self.app.download_manager(['url'])
+        self.assertTrue(all(not root.exists() for root in roots))
+        self.assertEqual(self.app.download_outcome, 'failed')
+        self.app.finish_download.assert_called_once()
+
     def test_reentrant_start_is_ignored(self):
         self.app.is_downloading = True
         self.app.start_download()

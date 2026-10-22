@@ -59,7 +59,9 @@ class ClipboardMixin:
 
     def _on_url_clipboard_shortcut(self, event):
         state = getattr(event, "state", 0)
-        if not state & 0x4 or state & (0x8 | 0x20000):
+        # Windows Tk: Mod1 (0x8) is NumLock; Mod2 (0x10) and
+        # ALT_MASK (0x20000) represent Alt. NumLock must not block Ctrl.
+        if not state & 0x4 or state & (0x10 | 0x20000):
             return None
         keysym = getattr(event, "keysym", "")
         keycode = getattr(event, "keycode", None)

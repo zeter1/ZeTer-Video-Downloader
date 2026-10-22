@@ -23,7 +23,9 @@ from src.downloads.youtube_queue_policy import reset_queue_capabilities
 class DownloadManagerMixin:
     def download_manager(self, urls: List[str]) -> None:
         self.download_outcome = "running"
+        video_dir = None
         try:
+            video_dir = Path(session_setting(self, "save_path")) / "Видео"
             self._run_download_session(urls)
         except CommandCancelledError:
             self.download_outcome = "cancelled"
@@ -37,7 +39,12 @@ class DownloadManagerMixin:
             self.log(f"❌ Ошибка сессии скачивания: {error}", "ERROR")
             self.write_problem_session_summary("failed", {"queued_url_count": len(urls)})
         finally:
-            self.finish_download()
+            # _run_download_session has left its executor: all workers stopped.
+            try:
+                if video_dir is not None:
+                    self.cleanup_empty_download_temp_roots(video_dir)
+            finally:
+                self.finish_download()
 
     def _run_download_session(self, urls: List[str]) -> None:
         reset_queue_capabilities(self)

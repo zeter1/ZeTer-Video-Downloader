@@ -14,6 +14,7 @@ from src.downloads.youtube_failure_diagnostics import analyze_yt_dlp_failure
 from src.downloads.youtube_success import handle_successful_attempt
 from src.core.subprocess_runner import SubprocessRunnerMixin
 from src.downloads.manager import DownloadManagerMixin
+from src.downloads.files import DownloadFilesMixin
 
 
 class SyntheticApp(YouTubeDownloaderMixin, YouTubeStrategyMixin):
@@ -212,6 +213,26 @@ class QueuePolicyTests(unittest.TestCase):
         self.assertEqual(result, str(candidate))
         self.assertEqual(self.app.run_command.call_count, 13)
         self.assertEqual(finalize.call_args.kwargs["candidate_path"], str(candidate))
+
+    def test_failed_fallback_publication_preserves_candidate_and_marker(self):
+        candidate_dir = self.setup.quality_candidate_dir
+        candidate_dir.mkdir()
+        candidate = candidate_dir / 'резерв.mp4'
+        candidate.write_bytes(b'only validated recovery candidate')
+        self.app.finalize_downloaded_video_file = DownloadFilesMixin.finalize_downloaded_video_file.__get__(self.app)
+        self.app.make_unique_media_path = lambda path: path
+        self.app.run_command = Mock(return_value=subprocess.CompletedProcess([], 0, '', ''))
+        decision = SimpleNamespace(last_error=None, candidate_path=str(candidate), candidate_height=720,
+                                   candidate_width=1280, action='retry')
+        with patch('src.downloads.youtube_downloader.build_ytdlp_strategy_plan',
+                   return_value=([strategy('one attempt')], [], '1')), \
+             patch('src.downloads.youtube_downloader.handle_successful_attempt', return_value=decision), \
+             patch('src.downloads.files.ensure_mp4_video', return_value=str(candidate)), \
+             patch('src.downloads.files.shutil.move', side_effect=PermissionError('fixture lock')):
+            result = self.app.method_yt_dlp('fixture')
+        self.assertIsNone(result)
+        self.assertTrue((candidate_dir / '.preserve_download').exists())
+        self.assertEqual(candidate.read_bytes(), b'only validated recovery candidate')
 
 
 class FailureAndQualityPolicyTests(unittest.TestCase):

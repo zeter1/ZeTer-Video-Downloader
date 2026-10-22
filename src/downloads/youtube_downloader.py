@@ -417,8 +417,10 @@ class YouTubeDownloaderMixin:
                 final_video_path=None, reason="download_failed_all_strategies"
             )
             try:
-                shutil.rmtree(download_temp_dir, ignore_errors=True)
-                shutil.rmtree(quality_candidate_dir, ignore_errors=True)
+                # Failed publication leaves the only valid recovery copy here.
+                for directory in (download_temp_dir, quality_candidate_dir):
+                    if not (directory / '.preserve_download').exists():
+                        shutil.rmtree(directory, ignore_errors=True)
             except Exception:
                 pass
             record_all_strategies_failed(
