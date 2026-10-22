@@ -119,12 +119,23 @@ jobs:
           python -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
           python -m unittest discover -s tests -v
 
+      - name: Embed exact build identity
+        shell: pwsh
+        run: |
+          $info = @{
+            repository = 'zeter1/Universal-Video-Downloader'
+            commit = $env:GITHUB_SHA
+            tag = "build-$($env:GITHUB_SHA.Substring(0,7))"
+          } | ConvertTo-Json
+          Set-Content -Path build_info.json -Value $info -Encoding utf8
+
       - name: Build self-contained Windows EXE
         shell: pwsh
         run: |
           $args = @(
             '--noconfirm','--clean','--onefile','--windowed',
             '--name','Universal-Video-Downloader',
+            '--add-data', 'build_info.json;.',
             '--add-binary', "$env:YTDLP_BINARY;.",
             '--add-binary', "$env:DENO_BINARY;.",
             '--add-binary', "$env:FFMPEG_BINARY;.",

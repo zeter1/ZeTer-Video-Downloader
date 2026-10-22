@@ -41,6 +41,10 @@ Python, `yt-dlp`, FFmpeg/ffprobe, and Deno are included in the EXE. Internet acc
 - diagnostic logs;
 - tools that help Codex navigate the codebase efficiently.
 
+## Windows application updates
+
+The Windows EXE embeds its exact GitHub build tag and checks published release builds in the background at startup. Use **«Проверить обновления»** to check manually, or disable automatic startup checks in the settings. Downloaded updates are verified against the release asset's SHA-256 digest; after confirmation, a separate updater replaces the EXE after the app exits, keeping a backup for rollback on failure. Settings, download history and user files are preserved. Existing older EXEs have no build identity and must be upgraded manually once via [Releases](https://github.com/zeter1/Universal-Video-Downloader/releases). Write permission to the EXE directory is required.
+
 ## Installation from source
 
 1. Install a current Python version for Windows.

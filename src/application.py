@@ -40,6 +40,8 @@ from src.ui.video_list import VideoListMixin
 from src.ui.log_view import LogViewMixin
 from src.ui.folders import FoldersMixin
 from src.ui.layout import UILayoutMixin
+from src.ui.update_controls import UpdateControlsMixin
+from src.core.app_updates import installed_build_tag
 from src.diagnostics.migration import DiagnosticsMigrationMixin
 from src.diagnostics.retention import DiagnosticsRetentionMixin
 from src.diagnostics.logger_setup import DiagnosticsLoggerMixin
@@ -88,6 +90,7 @@ class VideoDownloader(
     LogViewMixin,
     FoldersMixin,
     UILayoutMixin,
+    UpdateControlsMixin,
     DiagnosticsMigrationMixin,
     DiagnosticsRetentionMixin,
     DiagnosticsLoggerMixin,
@@ -103,7 +106,7 @@ class VideoDownloader(
 ):
     def __init__(self, root):
         self.root = root
-        self.root.title(f"Универсальный видео-загрузчик v{APP_VERSION}")
+        self.root.title(f"Универсальный видео-загрузчик v{APP_VERSION} ({installed_build_tag() or 'исходники'})")
         self.root.state('zoomed')
 
         # Инициализация разбита по owner-модулям: Codex может читать только
@@ -120,6 +123,7 @@ class VideoDownloader(
         self.load_download_log()
         self.check_dependencies()
         self.setup_ui()
+        self.root.after(3500, lambda: self.check_app_updates(automatic=True))
         self.initialize_completion_notifications()
         self.initialize_problem_diagnostics()
 

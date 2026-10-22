@@ -11,6 +11,7 @@ import tkinter as tk
 import traceback
 
 from src.core.constants import PROBLEM_LOG_SCHEMA_VERSION, PROBLEM_LOG_TAIL_CHARS
+from src.core.app_updates import installed_build_tag
 from src.app.paths import get_program_dir, get_runtime_bin_dir
 
 PROGRAM_DIR = get_program_dir()
@@ -94,7 +95,10 @@ def _run_packaged_self_test() -> int:
         "tools": results,
     }
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    payload["build_tag"] = installed_build_tag()
     ok = all(item.get("exists") and item.get("returncode") == 0 for item in results.values())
+    if getattr(sys, "frozen", False):
+        ok = ok and bool(payload["build_tag"])
     return 0 if ok else 1
 
 

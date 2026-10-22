@@ -218,6 +218,15 @@ class UILayoutMixin:
             text=f"(0 = без разбивки, макс {MAX_SPLIT_HOURS})"
         ).pack(side=tk.LEFT, padx=5)
 
+        self.auto_check_updates_var = tk.BooleanVar(
+            value=self.settings.get("auto_check_updates", True)
+        )
+        ttk.Checkbutton(
+            settings_frame, text="Проверять обновления при запуске",
+            variable=self.auto_check_updates_var,
+            command=self._save_auto_update_preference
+        ).grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=2)
+
         # ── Кнопки действий ──
         btn_frame = ttk.Frame(main_frame)
         btn_frame.grid(row=4, column=0, pady=10)
@@ -239,6 +248,11 @@ class UILayoutMixin:
             btn_frame, text="🗂 Очистить лог скачанных",
             command=self.clear_download_log
         ).grid(row=0, column=2, padx=5)
+
+        ttk.Button(
+            btn_frame, text="🔄 Проверить обновления",
+            command=self.check_app_updates
+        ).grid(row=0, column=3, padx=5)
 
         # ── Лог ──
         log_frame = ttk.LabelFrame(main_frame, text="Лог загрузки", padding="5")

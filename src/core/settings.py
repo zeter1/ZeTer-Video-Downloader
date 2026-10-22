@@ -77,6 +77,7 @@ class SettingsMixin:
             "concurrent_downloads": 2,
             "download_subtitles": False,
             "write_problem_logs": True,
+            "auto_check_updates": True,
             "proxy_enabled": False,
             "proxy_url": "",
             "merge_audio": False,
@@ -110,6 +111,7 @@ class SettingsMixin:
         self.settings["write_problem_logs"] = bool(
             self.settings.get("write_problem_logs", True)
         )
+        self.settings["auto_check_updates"] = bool(self.settings.get("auto_check_updates", True))
         self.problem_logging_enabled = self.settings["write_problem_logs"]
         # После полной загрузки настроек синхронизируем файловые обработчики логгера.
         if hasattr(self, "file_logger"):
