@@ -1,168 +1,253 @@
-**Язык / Language:** [Русский](README.md) · **English**
+**Language / Язык:** [Русский](README.md) · **English**
 
 # Universal Video Downloader
 
-**Universal Video Downloader** is a Python/Tkinter Windows application for downloading video from sites supported by `yt-dlp`. It is designed around a convenient final artifact: video is delivered as MP4 at up to **1080p**, while audio can be saved as MP3.
+[![Python checks](https://github.com/zeter1/Universal-Video-Downloader/actions/workflows/python-check.yml/badge.svg)](https://github.com/zeter1/Universal-Video-Downloader/actions/workflows/python-check.yml)
+[![Releases](https://img.shields.io/badge/Windows-EXE%20Releases-blue?logo=github)](https://github.com/zeter1/Universal-Video-Downloader/releases)
 
-The project tries to avoid unnecessary transcoding. It first selects suitable MP4/M4A streams, uses fast lossless remuxing when needed, and falls back to H.264/AAC transcoding only when a compatible MP4 cannot be produced more directly.
+**Universal Video Downloader** is a Windows desktop application that downloads videos from sites supported by [yt-dlp](https://github.com/yt-dlp/yt-dlp), produces **MP4 video up to 1080p**, and automatically generates **MP3 audio** from successfully downloaded videos.
 
-## Download and run on Windows
+The application combines downloading, media processing, URL queue management, output validation and diagnostics in one interface. End users can run the packaged EXE **without separately installing Python, FFmpeg or the other bundled tools**.
 
-> Windows builds are marked **Prerelease**: they are preliminary builds for testing. A release build may differ from the current source.
+**[📥 Download for Windows](https://github.com/zeter1/Universal-Video-Downloader/releases)** · **[📖 Changelog](CHANGELOG.md)** · **[🐞 Report a bug](https://github.com/zeter1/Universal-Video-Downloader/issues/new/choose)**
 
-1. Open [GitHub Releases](https://github.com/zeter1/Universal-Video-Downloader/releases) and expand **Assets** for the build you choose.
-2. Download and run `Universal-Video-Downloader.exe`.
-3. Paste a video URL, choose video or MP3, and select an output folder.
+> **Please note:** published Windows builds are currently marked **Prerelease** and are not commercially code-signed. Website compatibility depends on the site's policies, network access and yt-dlp support.
 
-Python, `yt-dlp`, FFmpeg/ffprobe, and Deno are included in the EXE. Internet access is required; individual sites depend on their restrictions and `yt-dlp` support. A SHA-256 file is published beside the binary. Offline and packaged self-tests do not establish live website availability.
+## Contents
 
-> The EXE is not commercially code-signed; Windows SmartScreen may warn about a new or rarely downloaded file.
+- [Quick start](#quick-start)
+- [Features](#features)
+- [How to use](#how-to-use)
+- [Where files are stored](#where-files-are-stored)
+- [Application updates](#application-updates)
+- [Verifying the downloaded EXE](#verifying-the-downloaded-exe)
+- [Run from source](#run-from-source)
+- [Troubleshooting](#troubleshooting)
+- [Architecture](#architecture)
+- [Testing and packaging](#testing-and-packaging)
+- [Limitations and security](#limitations-and-security)
+- [Contact](#contact)
 
-## What the project demonstrates
+## Quick start
 
-- integration of `yt-dlp`, FFmpeg, and ffprobe into one user workflow;
-- media-processing strategy focused on quality and avoiding unnecessary transcoding;
-- validation of the final file after download and stream assembly;
-- fallback from compatible source streams to remux and only then to transcoding;
-- modular structure for a growing desktop application;
-- diagnostic artifacts for failures that depend on external sites and media tools;
-- a dedicated code map and tooling for finding the minimum change scope during AI-assisted development.
+**Available build:** Windows x64, a standalone `Universal-Video-Downloader.exe` (no installer).
+
+1. Open **[GitHub Releases](https://github.com/zeter1/Universal-Video-Downloader/releases)**. Since releases are marked *Prerelease*, choose the latest published build from the release list instead of relying on GitHub's `/releases/latest` endpoint.
+2. Expand **Assets** and download `Universal-Video-Downloader.exe`. The companion `Universal-Video-Downloader.sha256.txt` is only needed if you want to verify the checksum yourself.
+3. Place the EXE in a **writable folder**, for example `Documents\Universal-Video-Downloader`, and run it. Avoid `Program Files`: the app stores its settings and logs next to the executable.
+4. Paste one URL per line, choose a destination folder and click **«▶ Скачать все»** (*Download all*).
+5. Find the results in the **`Видео`** (Video) and **`Аудио`** (Audio) folders inside the chosen destination.
+
+The PyInstaller Windows build includes **yt-dlp, FFmpeg, ffprobe and Deno**. No Python installation or `requirements.txt` setup is needed for the EXE. An internet connection is required for downloading; some websites require authorization or may be inaccessible on your network.
+
+> If Windows SmartScreen shows an unknown-publisher warning, first confirm that the EXE came from this repository's Releases page and, if needed, verify its SHA-256. A warning can occur because the executable is unsigned; it does not, by itself, prove the file is safe or malicious.
 
 ## Features
 
-- video downloading through `yt-dlp`;
-- quality up to 1080p;
-- MP4 output;
-- audio download and MP3 conversion;
-- FFmpeg / ffprobe processing and result validation;
-- lossless remux preferred where possible;
-- H.264/AAC fallback when a compatible MP4 cannot be produced more directly;
-- modular architecture;
-- diagnostic logs;
-- tools that help Codex navigate the codebase efficiently.
+| Feature | Behavior |
+| --- | --- |
+| **MP4 video** | Automatically prioritizes 1080p-class quality with a strict maximum of 1080 vertical pixels; falls back to lower available quality when necessary |
+| **MP3 audio** | Automatically extracts audio from successfully downloaded videos; selectable 128/192/256/320 kbps or VBR-0 quality |
+| **Avoid unnecessary re-encoding** | Prefers compatible MP4/M4A streams and lossless remuxing; H.264/AAC transcoding is a fallback |
+| **URL queue** | Multiple URLs, duplicate detection and history-aware skips; up to 500 URLs per session |
+| **YouTube HTML playlist import** | Import a saved HTML page, select entries and filter previously downloaded videos |
+| **Concurrent downloads** | Configurable from 1 to 2 downloads at once |
+| **Merged audio** | Optionally combine successfully generated MP3 files, with duration-based splitting |
+| **Additional options** | Subtitles when available, network retries, fallback yt-dlp strategies and completion notifications |
+| **Diagnostics** | UI logs, per-session files, links requiring manual attention and structured error reports |
+| **App updates** | Background GitHub Release checks and user-approved installation of a verified EXE |
 
-## Windows application updates
+**Important:** the current UI does **not** offer a separate *video-only / MP3-only* selector. A normal session first downloads video and then converts successful downloads to MP3. This documentation describes the current implementation, not a planned feature.
 
-The Windows EXE embeds its exact GitHub build tag and checks published release builds in the background at startup. Use **«Проверить обновления»** to check manually, or disable automatic startup checks in the settings. Downloaded updates are verified against the release asset's SHA-256 digest; after confirmation, a separate updater replaces the EXE after the app exits, keeping a backup for rollback on failure. Settings, download history and user files are preserved. Existing older EXEs have no build identity and must be upgraded manually once via [Releases](https://github.com/zeter1/Universal-Video-Downloader/releases). Write permission to the EXE directory is required.
+## How to use
 
-## Installation from source
+### Download one or more videos
 
-1. Install a current Python version for Windows.
-2. Install FFmpeg and ffprobe and add them to the system `PATH`.
-3. Download the project with **Code → Download ZIP** or Git:
+1. Copy a video link from a website supported by yt-dlp.
+2. Paste one or more URLs into **«Ссылки для скачивания»** (Download links), **one URL per line**, or click **«📋 Вставить из буфера»** (Paste from clipboard).
+3. Set **«Путь сохранения»** (Save location). Video quality is automatically managed with a preference for Full HD and a maximum of 1080p; there is no manual video-resolution selector.
+4. Optionally choose the MP3 quality, subtitles and number of concurrent downloads.
+5. Click **«▶ Скачать все»** (Download all). Follow progress in **«Весь лог загрузки»** (All logs), **«Не скачалось»** (Failed downloads) and **«Ошибки»** (Errors).
+6. Wait for both download and MP3 conversion to finish. The app shows a completion notification; **«⏹ Отменить»** (Cancel) stops processing.
 
-```bash
-git clone https://github.com/zeter1/Universal-Video-Downloader.git
-cd Universal-Video-Downloader
-```
+Duplicate URLs in a queue are removed; videos recorded as previously downloaded are normally skipped. **«🗂 Очистить лог скачанных»** clears the downloaded-video record, so use it deliberately.
 
-4. Install Python dependencies:
+### Import a YouTube HTML playlist
 
-```powershell
-python -m pip install -r requirements.txt
-```
+1. Save the playlist page as an HTML file.
+2. Click **«📂 Загрузить плейлист из .html»** and select that file.
+3. Select videos from the imported list (or **«Только новые»**, *New only*) and click **«Добавить выбранные в очередь»** (*Add selected to queue*).
+4. Start the resulting queue with **«Скачать все»**.
 
-## Launch from source
+Parsing depends on the structure of the saved YouTube page; arbitrary HTML and every possible future page layout are not guaranteed to work.
 
-```powershell
-python video_downloader.py
-```
+### Merge MP3 files
 
-## Usage
+Enable **«Объединить все аудио в один файл»** (*Merge all audio into one file*). If needed, set the split duration: **0** means no splitting, up to **10 hours** per part. Only **successfully generated MP3 files from the current session** are merged, even when some downloads fail.
 
-1. Start the application.
-2. Copy a video URL from a supported site.
-3. Paste it into the application.
-4. Select video or MP3 mode.
-5. For video, choose an available quality up to 1080p.
-6. Select the output folder.
-7. Start the download.
-8. After downloading, the application combines streams through FFmpeg when necessary and validates the resulting media file.
-
-When source streams are already MP4-compatible, the application tries to avoid re-encoding them. This is faster and avoids an additional quality loss.
-
-## How the final MP4 is produced
+### MP4 processing pipeline
 
 ```text
-Compatible MP4/M4A streams
-        ↓
-Download through yt-dlp
-        ↓
-Lossless MP4 remux when necessary
-        ↓
-H.264/AAC transcoding only as a fallback
-        ↓
-Result validation through ffprobe
+URL → yt-dlp → format selection (prefer 1080p, maximum 1080p)
+                        ↓
+       compatible streams / separate video + audio
+                        ↓
+         direct MP4 or lossless remux
+                        ↓
+         H.264/AAC transcoding only if needed
+                        ↓
+              ffprobe validation
+                        ↓
+             Видео/*.mp4 → Аудио/*.mp3
 ```
 
-## Requirements
+The available formats depend on the source website. A video being playable on YouTube does not guarantee a particular resolution or audio track can be downloaded.
 
-- Windows;
-- Python;
-- `yt-dlp`;
-- FFmpeg;
-- ffprobe.
+## Where files are stored
 
-Python dependencies are listed in [`requirements.txt`](requirements.txt).
+The **`Видео`** and **`Аудио`** directories are created **inside the destination folder you choose**. Application support files are written **next to the EXE**, or to the repository root when running from source.
 
-## Architecture and development
+| Path relative to the application | Purpose |
+| --- | --- |
+| `Настройки/settings.json` | App preferences, including the save destination and automatic update checks |
+| `Логи скачивания/` | Runtime logs and downloaded URL records |
+| `История ссылок/` | Per-session history of processed download links |
+| `Ссылки на скачивания/` | Queued links saved on application exit |
+| `Обработать вручную/` | Failed/problematic downloads and files requiring manual attention |
+| `Логи проблем/` | Diagnostic sessions, events and reports (when logging is enabled) |
+| `Обновления/build-.../` | Staged EXE updates and, if installation fails, `update-error.log` |
 
-The application is split into modules so a focused downloader change does not require reading the whole codebase.
+**Log retention:** the application automatically cleans up some history and diagnostic files according to their retention windows (60 and 120 days, respectively). Keep a separate copy if you need particular logs for an investigation.
 
-See:
+## Application updates
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture and quality rules;
-- [`docs/CODE_MAP.md`](docs/CODE_MAP.md) — project code map.
+Windows builds are published on [GitHub Releases](https://github.com/zeter1/Universal-Video-Downloader/releases) with tags such as `build-7ab3f9f`. This identifier represents the **exact build revision**, not the human-readable application version; multiple builds may still display `6.3`.
 
-To identify a minimal code scope before making a change:
+- **Automatic checks:** by default the EXE checks published releases in the background on startup. Disable this using **«Проверять обновления при запуске»** (*Check for updates on startup*).
+- **Manual checks:** click **«🔄 Проверить обновления»** (*Check for updates*).
+- **Installation:** if a newer recognized build exists, the app offers to download it, verifies its **SHA-256 against the GitHub release asset metadata**, and only after your approval exits to let a separate updater replace the executable. The updater includes an attempt to restore the previous EXE if installation fails.
+- **Your data:** the updater is designed not to delete settings, history or downloaded media. The EXE folder must be writable.
+- **Older EXEs:** builds without embedded revision information cannot be compared safely and must be **upgraded manually once** by downloading a newer EXE. Source-code launches cannot self-replace an EXE.
 
-```bash
-python scripts/codex_scope.py "task description"
-```
+**Do not start an update while downloading media.** If GitHub cannot be reached, update checks may fail without preventing normal app use. A passing CI build does not by itself verify a real-life in-place Windows update on every user's PC.
 
-To check project structure and AI-assisted development efficiency:
+**Updating yt-dlp is different from updating this application.** The packaged EXE has its own bundled yt-dlp. Running `pip install -U yt-dlp` or `Обновление yt-dlp.bat` **does not update the embedded executable inside the packaged app**. Download a newer app release instead; for source installations, update the Python dependency through pip.
 
-```bash
-python scripts/check_codex_efficiency.py
-```
+## Verifying the downloaded EXE
 
-## Verification
-
-CI compiles the Python sources and runs the full offline regression-test suite. The same baseline can be run locally:
+If desired, download `Universal-Video-Downloader.sha256.txt` **from the same release** as the EXE. In PowerShell, in the directory containing both files:
 
 ```powershell
-python -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
-python -m unittest discover -s tests -v
+(Get-FileHash .\Universal-Video-Downloader.exe -Algorithm SHA256).Hash
+Get-Content .\Universal-Video-Downloader.sha256.txt
 ```
 
-These checks do not replace a real download from a specific site: site availability and format behavior depend on external services and the current `yt-dlp` version.
+Compare the 64-character hexadecimal hash with the one at the beginning of the `.sha256.txt` file. **They must match.** A checksum detects whether the downloaded bytes match the published artifact; it is not a substitute for trusting the source and does not constitute a code signature.
 
-## Support and security
+## Run from source
 
-- [`SUPPORT.md`](SUPPORT.md) — useful data for a bug report;
-- [GitHub Issues](https://github.com/zeter1/Universal-Video-Downloader/issues) — reproducible bugs and regular support issues;
-- [`SECURITY.md`](SECURITY.md) — reporting potential security vulnerabilities.
+This route is intended for developers or users who prefer a Python environment.
 
-## Important limitation
+**Requirements:** Windows, Python **3.12** (the version used in CI), Git, [FFmpeg](https://ffmpeg.org/) with both `ffmpeg` and `ffprobe` available in `PATH`. `yt-dlp` is installed from `requirements.txt`. [Deno](https://deno.com/) or Node.js is helpful for some YouTube scenarios.
 
-Support for individual sites depends on `yt-dlp` and may change when sites update their APIs, protection mechanisms, or media formats. When a download breaks, update `yt-dlp` first and inspect the application's diagnostics.
+```powershell
+git clone https://github.com/zeter1/Universal-Video-Downloader.git
+cd Universal-Video-Downloader
 
-## License
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe video_downloader.py
+```
 
-The source code is published as a portfolio project and for implementation review. Use of third-party services and downloading content must comply with the relevant site's terms and applicable law.
+Check the tools:
 
-## Developer contacts
+```powershell
+ffmpeg -version
+ffprobe -version
+.\.venv\Scripts\python.exe -m yt_dlp --version
+```
 
-**Язык / Language:** [Русский](README.md#контакты-для-связи-с-разработчиком) · **English**
+Do not confuse the source environment with the packaged EXE: the development prerequisites are not needed for the Windows Release download. Ubuntu is used for automated tests, but the primary desktop target is Windows.
 
-- [zeter11@gmail.com](mailto:zeter11@gmail.com)
-- [https://t.me/zeter1](https://t.me/zeter1)
-- [https://www.linkedin.com/in/zeter/](https://www.linkedin.com/in/zeter/)
-- [https://www.facebook.com/zeter1](https://www.facebook.com/zeter1)
-- [https://vk.ru/zeter1](https://vk.ru/zeter1)
-- [https://www.instagram.com/zeter1992/](https://www.instagram.com/zeter1992/)
-- [https://tenchat.ru/zeter](https://tenchat.ru/zeter)
-- [https://x.com/zeter1](https://x.com/zeter1)
-- [https://www.threads.com/@zeter1992](https://www.threads.com/@zeter1992)
-- [https://ok.ru/zeter1](https://ok.ru/zeter1)
-- [https://t.me/zeterchat](https://t.me/zeterchat) — Telegram group: about me, projects and chat
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| **Video will not download** | Network access, whether the URL opens in a browser, site restrictions, current EXE/yt-dlp, **«Не скачалось»** (Failed downloads) |
+| **YouTube format error, HTTP 403 or timeout** | Recent yt-dlp, Deno/Node when running from source, VPN/proxy/network restrictions, logs for the specific attempt |
+| **Video exists but MP3 is missing** | Whether the source contains an audio stream, FFmpeg messages and audio-duration validation |
+| **A URL is skipped** | Previously downloaded video or duplicate in the current queue; check saved history |
+| **An update fails to install** | Write access to the EXE directory, active downloads, `Обновления/build-.../update-error.log`; download the latest EXE manually if necessary |
+| **Missing tools in source mode** | Ensure `ffmpeg`, `ffprobe` and `yt-dlp` are installed and available through `PATH` / the Python environment |
+
+For a reproducible bug, include the **`build-...` revision**, Windows version, source website, expected vs. actual behavior, reproduction steps, and **redacted** logs. Start with `Логи проблем/latest_run.json` and the corresponding `Логи проблем/Сессии/<run>/` directory if problem diagnostics are enabled.
+
+**[Support instructions](SUPPORT.md)** · **[Open an issue](https://github.com/zeter1/Universal-Video-Downloader/issues/new/choose)** · **[Security policy](SECURITY.md)**
+
+> **Privacy:** remove cookies, access tokens, authorization headers, private URLs and sensitive local paths before sharing diagnostics. Logs may reveal information about websites visited and local files.
+
+## Architecture
+
+The project is split by responsibility so a downloader, UI or diagnostic change does not require modifying one monolithic file.
+
+```text
+video_downloader.py → src/bootstrap.py → src/application.py
+                                           ├── src/app/          paths and state
+                                           ├── src/core/         runtime, settings, subprocess, updates
+                                           ├── src/downloads/    URL, queue, yt-dlp, quality, MP4 validation
+                                           ├── src/audio/        MP3 conversion, merge and split
+                                           ├── src/ui/           Tkinter, notifications, update UI
+                                           └── src/diagnostics/  errors, events, reports and retention
+tests/               offline regression tests
+scripts/             repository navigation and structure checks
+.github/workflows/   CI, Windows EXE packaging and GitHub Releases
+```
+
+Technical design highlights:
+
+- **Media output contract:** 1080p maximum, preferred compatible formats, actual video validation using ffprobe and MP4 output.
+- **Recovery-focused behavior:** yt-dlp fallback strategies, bounded retries, hung-process detection and cancellation without hiding useful errors.
+- **Diagnostic evidence:** structured events and sessions, outcome reports, size limits and log retention policies.
+- **Windows packaging:** PyInstaller `--onefile`, bundled tools, `--self-test`, SHA-256 and a revision-aware EXE updater.
+- **AI-friendly navigation:** clear module owners and a scope-selection script for focused Codex/ChatGPT work.
+
+**Technical documentation:** [Architecture](docs/ARCHITECTURE.md) · [Code map](docs/CODE_MAP.md) · [Module index](docs/CODE_INDEX.md) · [Codex workflow](docs/CODEX_WORKFLOW.md) · [Agent instructions](AGENTS.md)
+
+## Testing and packaging
+
+Run the baseline offline checks:
+
+```powershell
+.\.venv\Scripts\python.exe -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe scripts/check_codex_efficiency.py
+```
+
+In [GitHub Actions](https://github.com/zeter1/Universal-Video-Downloader/actions/workflows/python-check.yml), relevant Python changes trigger compilation and offline tests on Ubuntu. **The Windows EXE is built separately**, after successful tests, through a manually dispatched workflow or a push commit containing `[package]`. The Windows job reruns tests, packages with PyInstaller, runs the bundled-tool `--self-test` and publishes the EXE plus SHA-256 via GitHub Releases.
+
+A README-only change **does not create a new executable**. A passing CI run does not guarantee support for every external website or replace manual GUI and in-place update testing.
+
+## Limitations and security
+
+- **Website access:** compatibility depends on yt-dlp, website restrictions, connectivity and authorization. Access to private, paid or protected content is not guaranteed.
+- **Quality:** video output is capped at 1080p; a 1080p stream is not guaranteed to exist.
+- **Audio:** MP3 is generated only from successful downloads that have an audio track.
+- **Platform:** packaged EXE is for Windows x64 and is not commercially code-signed.
+- **Legal use:** download only content you are authorized to access and use, subject to copyright law and each service's terms.
+- **License:** this repository does not currently include a standalone `LICENSE` file; publicly visible source code does not automatically grant permission to redistribute or use it commercially.
+
+For potential vulnerabilities, follow [SECURITY.md](SECURITY.md) and do not disclose secrets in a public issue.
+
+## Contact
+
+**Developer:** [ZeTer / GitHub](https://github.com/zeter1)
+
+- **Email:** [zeter11@gmail.com](mailto:zeter11@gmail.com)
+- **Telegram:** [https://t.me/zeter1](https://t.me/zeter1)
+- **LinkedIn:** [https://www.linkedin.com/in/zeter/](https://www.linkedin.com/in/zeter/)
+- **Profiles:** [Facebook](https://www.facebook.com/zeter1) · [VK](https://vk.ru/zeter1) · [Instagram](https://www.instagram.com/zeter1992/) · [TenChat](https://tenchat.ru/zeter) · [X](https://x.com/zeter1) · [Threads](https://www.threads.com/@zeter1992) · [OK](https://ok.ru/zeter1)
+- **Telegram group:** [https://t.me/zeterchat](https://t.me/zeterchat)
+
+---
+
+[↑ Back to top](#universal-video-downloader) · [Русская версия](README.md)
