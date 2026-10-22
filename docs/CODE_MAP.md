@@ -23,6 +23,9 @@ python scripts/codex_scope.py "описание задачи"
 | Proxy/EJS | `downloads/youtube_access.py` | `youtube_command.py` |
 | yt-dlp вернул 0, файл не найден | `downloads/ytdlp_results.py` | `files.py` |
 | Зависший процесс/timeout/cancel | `core/subprocess_runner.py` | `ytdlp_runtime.py`, `process_control.py` |
+| Обновления EXE / GitHub Releases / SHA-256 | `core/app_updates.py`, `ui/update_controls.py` | `tests/test_app_updates.py`, [RELEASE_PROCESS.md](RELEASE_PROCESS.md) |
+| Packaging / Actions / release notes | `.github/workflows/python-check.yml`, `RELEASE_NOTES_RU.md` | [RELEASE_PROCESS.md](RELEASE_PROCESS.md), `CHANGELOG.md` |
+| Пользовательские ошибки, место логов | `app/paths.py`, `diagnostics/lifecycle.py` | [TROUBLESHOOTING.md](TROUBLESHOOTING.md), `problem_log_validator.py` |
 | Настройки | `core/settings.py` | `core/session_settings.py`, `ui/settings_controls.py` |
 | MP3 | `audio/convert.py`, `merge.py`, `split.py` | `downloads/media_validation.py` |
 | UI | нужный `ui/*.py` | `ui/layout.py` |
@@ -59,3 +62,12 @@ python -m unittest discover -s tests
 
 Точечные тесты указаны самим `scripts/codex_scope.py`.
 Полный индекс методов генерируется: `python scripts/generate_code_index.py`.
+
+## Если неясно, что менять
+
+- **Не работает отдельный URL:** сначала `youtube_downloader.py` + соответствующий `youtube_*.py` owner, затем диагностическая сессия и узкий тест; не просматривайте весь каталог.
+- **Windows EXE не обновляется:** различайте `core/app_updates.py` (обнаружение и проверка SHA-256) и `ui/update_controls.py` (UI, потоки, согласие пользователя); схема в [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
+- **Не создаётся MP3 / ломается объединение:** `audio/convert.py`, `merge.py`, `split.py` и `downloads/media_validation.py`; не удаляйте промежуточные каталоги пользователя автоматически.
+- **Ошибка диагностики:** сначала `diagnostics/` и `problem_log_validator.py`, затем [TROUBLESHOOTING.md](TROUBLESHOOTING.md); не записывайте в issue приватные URLs/секреты.
+
+После изменения Python обновляйте [CHANGELOG.md](../CHANGELOG.md). `CODE_INDEX.md` перегенерируйте скриптом, а не вручную. Общая последовательность и границы проверок — в [CODEX_WORKFLOW.md](CODEX_WORKFLOW.md).

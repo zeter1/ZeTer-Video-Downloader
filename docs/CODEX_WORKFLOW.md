@@ -1,43 +1,51 @@
-# Codex workflow — минимум лишнего контекста
+# Codex workflow — от симптома до проверенного diff
 
-## Быстрый вход
+[← Документация](README.md) · [Карта кода](CODE_MAP.md) · [Архитектура](ARCHITECTURE.md) · [Релизы и CI](RELEASE_PROCESS.md)
 
-1. `python scripts/codex_scope.py "описание задачи"`.
-2. Читать `PRIMARY`, затем только нужный `RELATED` и один релевантный test.
-3. Если route не найден — `docs/CODE_MAP.md` + точечный `rg`.
-4. `docs/CODE_INDEX.md` открывать только когда нужен точный список методов.
+Работайте по циклу **INSPECT → DIAGNOSE → PLAN → CHANGE → VERIFY → REVIEW → DELIVER**. Цель — минимальное изменение правильного owner-модуля, а не переписывание всего приложения.
 
-## Для багфикса
+## Быстрый вход (экономия контекста)
 
-1. Найти текст ошибки/метод через `rg -n "..." src tests`.
-2. Определить owner, не читать соседнюю подсистему «на всякий случай».
-3. Сначала точечный тест.
-4. Затем `python scripts/check_codex_efficiency.py`.
-5. Затем полный `python -m unittest discover -s tests`.
+1. Из корня репозитория выполните `python scripts/codex_scope.py "симптом или задача"`.
+2. Прочитайте найденный `PRIMARY`, затем лишь нужный `RELATED` и релевантный тест. Если маршрут не найден — [CODE_MAP.md](CODE_MAP.md) и точечный `rg -n "..." src tests`.
+3. [CODE_INDEX.md](CODE_INDEX.md) открывайте **только** для поиска имени метода/строки. Он генерируется `python scripts/generate_code_index.py`; не редактируйте его вручную.
+4. Перед вмешательством сформулируйте root cause, существующий контракт, риск регрессии и критерии проверки.
 
-## Не делать
+## Для багфикса / рефакторинга
 
-- не использовать `from ... import *`;
-- не импортировать `src.core.runtime` в новом/изменяемом коде;
-- не читать весь `src/` или `src/diagnostics/` для локального download/UI бага;
-- не возвращать бизнес-логику в `application.py`;
-- не копировать длинные списки yt-dlp ошибок/стратегий в orchestration-файл;
-- не редактировать `docs/CODE_INDEX.md` вручную — он генерируется скриптом.
+1. Соберите воспроизведение: traceback, сообщение UI, лог сессии или падающий тест. Сопоставьте с owner-файлом.
+2. Сначала изолированный regression test (когда это применимо), затем **минимальный diff**. Не склеивайте fix с несвязанным рефакторингом.
+3. Не скрывайте провалы `except: pass`, отключением проверок или `continue-on-error`. Классифицируйте причину: код, внешняя сеть, инструменты, файл или среда.
+4. Для пользовательского поведения сохраняйте существующие контракты: видео MP4 не выше 1080p, проверка ffprobe, MP3 после успешного видео, корректные статусы/отмена, сохранение настроек и истории.
+5. Для изменения кода обновите [CHANGELOG.md](../CHANGELOG.md) и связанную документацию. Указания на версии/релизы берите из текущих файлов и workflow.
 
-## Owner-границы yt-dlp
+## Owner-границы
 
-- `youtube_downloader.py` — только control flow одной загрузки.
-- `youtube_attempt.py` — context + первые сообщения попытки.
-- `youtube_retry.py` — чистая классификация ошибок.
-- `youtube_success.py` — проверка успешного результата и quality candidate.
-- `youtube_finalize.py` — lower-quality fallback и итоговая failure-диагностика.
-- `youtube_command.py` — CLI/format selector.
-- `youtube_strategy_catalog.py` — данные стратегий.
+- `video_downloader.py → src/bootstrap.py → src/application.py` — запуск/композиция, не хранилище новой бизнес-логики.
+- `downloads/youtube_downloader.py` — управление одной загрузкой; `youtube_attempt.py` — контекст попытки; `youtube_retry.py` — классификация; `youtube_success.py` — успех/кандидат; `youtube_finalize.py` — финальный резерв/отчёт.
+- `youtube_command.py` — CLI/формат; `youtube_strategy_catalog.py` — каталог стратегий; `youtube_queue_policy.py` — бюджет/временные исключения очереди.
+- `core/app_updates.py` — сравнение релизов и безопасная замена EXE; `ui/update_controls.py` — поток/UI и согласие. Детали: [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
+- `app/paths.py` — пути; `diagnostics/*` — проблемы, события, manifest/retention; `ui/*` — Tkinter; `audio/*` — FFmpeg-аудио.
 
-## Definition of done
+**Не делать:** `from ... import *`, новые импорты `src.core.runtime`, чтение всего `src/` «на всякий случай», перенос стратегий/ошибок yt-dlp в orchestration.
 
-- owner-границы сохранены;
-- нет wildcard/runtime imports;
-- релевантные тесты проходят;
-- full suite проходит либо зафиксирована уже существовавшая fixture/environment-проблема;
-- для сетевых изменений живой YouTube smoke выполняется отдельно при необходимости.
+## Проверки по уровням
+
+Из корня репозитория с установленными Python-зависимостями:
+
+```powershell
+python -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+python scripts/check_codex_efficiency.py
+python -m unittest discover -s tests -v
+```
+
+Сначала можно запустить **узкий** тест из маршрутизатора `codex_scope.py`. После изменения диагностики полезно выполнить `python problem_log_validator.py --examples`. Падающий тест требует разбора; если среда не содержит FFmpeg/JS runtime — это нужно указать отдельно, а не выдать за успешную проверку.
+
+Offline-тесты и `--self-test` не подтверждают внешний вид Tkinter, реальную загрузку YouTube или безопасную замену EXE на Windows. Для затронутой области отдельно нужны runtime/Windows/manual checks; если не проведены — **NOT VERIFIED**.
+
+## GitHub / Actions / завершение
+
+- Перед записью в GitHub: проверить ветку, текущий SHA файла, workflows и триггеры; избегать частых пушей.
+- Коммит `[package]` запускает сборку и release; вместе с ним нужны актуальные `RELEASE_NOTES_RU.md`. Для обычных docs/code-коммитов **не** используйте `[package]` случайно.
+- После изменения workflow проверьте первый run и его failed step/logs до следующих коммитов.
+- В отчёте укажите: точные файлы, причину, поведение до/после, реально запущенные проверки, состояние Actions, непроверенные области и потенциальные ограничения.

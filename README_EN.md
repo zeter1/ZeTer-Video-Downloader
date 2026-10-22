@@ -186,6 +186,8 @@ For a reproducible bug, include the **`build-...` revision**, Windows version, s
 
 > **Privacy:** remove cookies, access tokens, authorization headers, private URLs and sensitive local paths before sharing diagnostics. Logs may reveal information about websites visited and local files.
 
+More technical and support documentation (in Russian): **[documentation hub](docs/README.md)** · [troubleshooting guide](docs/TROUBLESHOOTING.md) · [Windows packaging/release process](docs/RELEASE_PROCESS.md). The guides distinguish bundled EXE dependencies from the source-code environment.
+
 ## Architecture
 
 The project is split by responsibility so a downloader, UI or diagnostic change does not require modifying one monolithic file.
