@@ -1,0 +1,4 @@
+Windows release build request
+Source code commit: 10f49903be20e865bb04bef72566528e96d63472
+Requested: 2026-10-22
+Purpose: Package latest ZeTer Video Downloader fixes into a verified Windows EXE and publish a GitHub Release.
