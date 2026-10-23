@@ -282,9 +282,8 @@ class DownloadManagerMixin:
             )
             return
 
-        if not self.check_internet_connection():
-            messagebox.showerror("Ошибка", "Нет подключения к интернету!")
-            return
+        # Проверяем сам URL в yt-dlp: прямой TCP-тест не учитывает системный
+        # прокси/VPN и ничего не доказывает о доступности выбранного сайта.
 
         session_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.current_session_start = session_time
@@ -300,13 +299,10 @@ class DownloadManagerMixin:
         except tk.TclError:
             self.max_concurrent = 2
 
-        # VPN/TUN-режим: если пользователь выбрал 2 потока, не понижаем YouTube до 1.
-        # При включённом системном VPN два параллельных ролика обычно качаются стабильно,
-        # а ограничение до 1 потока сильно замедляло большие очереди.
         if any(self.is_youtube_url(u) for u in urls):
             self.log(
-                f"🌐 VPN/TUN-режим: YouTube будет качаться в {self.max_concurrent} поток(а/ов). "
-                "Если VPN выключен и снова пойдут Read timed out, поставьте 1 поток.",
+                f"🌐 YouTube: одновременных загрузок — {self.max_concurrent}. "
+                "Подключение: " + self.proxy_status_text(),
                 "INFO"
             )
 

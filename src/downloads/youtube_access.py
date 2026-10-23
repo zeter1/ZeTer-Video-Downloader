@@ -126,7 +126,7 @@ class YouTubeAccessMixin:
             enabled = False
         if enabled:
             return "proxy включён, но URL пустой или некорректный"
-        return "proxy выключен"
+        return "системное подключение (обычная сеть или VPN, системный прокси автоматически)"
 
 
     def on_proxy_settings_change(self, event=None) -> None:

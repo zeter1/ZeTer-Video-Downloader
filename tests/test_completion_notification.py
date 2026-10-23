@@ -323,6 +323,19 @@ class CompletionDeliveryTests(unittest.TestCase):
                 self.assertEqual(app.browse_path_btn.options['state'], 'normal')
                 self.assertFalse(app.is_downloading)
 
+    def test_start_does_not_require_direct_access_to_unrelated_test_hosts(self):
+        self.prepare_start()
+        # Use the real preflight, if present, rather than the fixture's stub.
+        del self.app.check_internet_connection
+        with patch('socket.create_connection', side_effect=OSError('direct access blocked')) as tcp, \
+                patch('src.downloads.manager.threading.Thread') as worker, \
+                patch('src.downloads.manager.messagebox.showerror') as error_dialog:
+            self.app.start_download()
+        self.assertTrue(self.app.is_downloading)
+        worker.return_value.start.assert_called_once()
+        tcp.assert_not_called()
+        error_dialog.assert_not_called()
+
     def test_worker_start_failure_also_unlocks_folder(self):
         self.prepare_start()
         with patch('src.downloads.manager.threading.Thread') as worker:

@@ -3,7 +3,6 @@
 Автоматически выделено из прежнего модуля download_workflow.py без изменения тел методов.
 """
 
-import socket
 import time
 import tkinter as tk
 
@@ -50,33 +49,6 @@ class DownloadProgressMixin:
             "urls": []
         })
         self.save_settings()
-
-
-    def check_internet_connection(self) -> bool:
-        # Если пользователь включил proxy для yt-dlp, прямой TCP-тест до YouTube может
-        # быть нерелевантен: сам yt-dlp будет ходить через proxy. Поэтому не блокируем
-        # старт загрузки, а оставляем проверку реальной доступности на yt-dlp.
-        if self.get_proxy_url():
-            self.log(
-                f"🌐 Прямую проверку YouTube пропускаю: yt-dlp будет использовать proxy {self.proxy_status_text()}",
-                "INFO"
-            )
-            return True
-
-        targets = [("www.youtube.com", 443), ("8.8.8.8", 53), ("1.1.1.1", 53)]
-        last_error = None
-        for host, port in targets:
-            try:
-                with socket.create_connection((host, port), timeout=5):
-                    return True
-            except OSError as e:
-                last_error = e
-        self.record_problem(
-            "Проверка интернета не смогла подключиться ни к одному тестовому адресу",
-            "WARNING", "check_internet_connection",
-            {"targets": targets}, last_error
-        )
-        return False
 
 
     def update_main_progress(self, current: int) -> None:
