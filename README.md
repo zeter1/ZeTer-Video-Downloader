@@ -250,16 +250,21 @@ scripts/             инструменты навигации и проверк
 
 О потенциальных уязвимостях сообщайте согласно [SECURITY.md](SECURITY.md), не раскрывая секреты в открытом issue.
 
-## Контакты
+[↑ К началу](#zeter-video-downloader) · [English version](README_EN.md)
+
+## Контакты для связи:
 
 **Автор:** [ZeTer / GitHub](https://github.com/zeter1)
 
-- **Email:** [zeter11@gmail.com](mailto:zeter11@gmail.com)
-- **Telegram:** [https://t.me/zeter1](https://t.me/zeter1)
-- **LinkedIn:** [https://www.linkedin.com/in/zeter/](https://www.linkedin.com/in/zeter/)
-- **Профили:** [Facebook](https://www.facebook.com/zeter1) · [VK](https://vk.ru/zeter1) · [Instagram](https://www.instagram.com/zeter1992/) · [TenChat](https://tenchat.ru/zeter) · [X](https://x.com/zeter1) · [Threads](https://www.threads.com/@zeter1992) · [OK](https://ok.ru/zeter1)
-- **Telegram-группа:** [https://t.me/zeterchat](https://t.me/zeterchat)
-
----
-
-[↑ К началу](#zeter-video-downloader) · [English version](README_EN.md)
+- [zeter11@gmail.com](mailto:zeter11@gmail.com)
+- [https://t.me/zeter1](https://t.me/zeter1)
+- [https://www.linkedin.com/in/zeter/](https://www.linkedin.com/in/zeter/)
+- [https://www.facebook.com/zeter1](https://www.facebook.com/zeter1)
+- [https://vk.ru/zeter1](https://vk.ru/zeter1)
+- [https://www.instagram.com/zeter1992/](https://www.instagram.com/zeter1992/)
+- [https://tenchat.ru/zeter](https://tenchat.ru/zeter)
+- [https://x.com/zeter1](https://x.com/zeter1)
+- [https://www.threads.com/@zeter1992](https://www.threads.com/@zeter1992)
+- [https://ok.ru/zeter1](https://ok.ru/zeter1)
+- [https://t.me/zeterchat](https://t.me/zeterchat) - Telegram-группа для общения
+- [https://dkoles.com/](https://dkoles.com/) - сайт.
