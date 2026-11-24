@@ -41,9 +41,8 @@ class LogViewMixin:
                             text_widget=None) -> None:
         text_widget = text_widget or self.log_text
         folder_link_text = {
-            "HISTORY_FOLDER_LINK": "История ссылок",
+            "DOWNLOAD_ARCHIVE_FOLDER_LINK": "История скачиваний",
             "DOWNLOAD_LINKS_FOLDER_LINK": "Ссылки на скачивания",
-            "DOWNLOADED_SESSIONS_FOLDER_LINK": "Логи скачивания/Сессии скачанных",
             "MANUAL_FOLDER_LINK": "Обработать вручную",
             "PROBLEM_FOLDER_LINK": "Логи проблем",
         }.get(level)
@@ -199,9 +198,8 @@ class LogViewMixin:
         text_widget.tag_config("CRITICAL", foreground="red", font=("Arial", 10, "bold"))
 
         folder_links = {
-            "HISTORY_FOLDER_LINK": self.open_history_folder,
+            "DOWNLOAD_ARCHIVE_FOLDER_LINK": self.open_download_archive_folder,
             "DOWNLOAD_LINKS_FOLDER_LINK": self.open_download_links_folder,
-            "DOWNLOADED_SESSIONS_FOLDER_LINK": self.open_downloaded_sessions_folder,
             "MANUAL_FOLDER_LINK": self.open_manual_processing_folder,
             "PROBLEM_FOLDER_LINK": self.open_problem_logs_folder,
         }
@@ -235,8 +233,8 @@ class LogViewMixin:
 
         for tag_name in (
             "ERROR", "WARNING", "SUCCESS", "INFO", "CRITICAL",
-            "HISTORY_FOLDER_LINK", "DOWNLOAD_LINKS_FOLDER_LINK",
-            "DOWNLOADED_SESSIONS_FOLDER_LINK", "MANUAL_FOLDER_LINK",
+            "DOWNLOAD_ARCHIVE_FOLDER_LINK", "DOWNLOAD_LINKS_FOLDER_LINK",
+            "MANUAL_FOLDER_LINK",
             "PROBLEM_FOLDER_LINK", "URL_LINK",
         ):
             text_widget.tag_config(tag_name, spacing3=LOG_ENTRY_SPACING_PX)

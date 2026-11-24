@@ -7,7 +7,7 @@ _snapshot_download_target_files(). No retry or file-finalization decisions live 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
-import shutil
+import time
 
 from src.core.constants import (
     PROBLEM_LOG_INFO_FILE_SNAPSHOT_LIMIT, VIDEO_TARGET_HEIGHT, YT_DLP_HTTP_CHUNK_SIZE,
@@ -29,18 +29,15 @@ class DownloadSetup:
 
 
 def prepare_download_setup(app, url: str) -> DownloadSetup:
-    video_dir = Path(session_setting(app, "save_path")) / "Видео"
+    video_dir = (Path(session_setting(app, "save_path")) / "Видео").absolute()
     video_dir.mkdir(parents=True, exist_ok=True)
     quality = f"{VIDEO_TARGET_HEIGHT}p"
     expected_video_id = app.extract_video_id(url)
-    download_temp_dir = app.make_video_download_temp_dir(video_dir, url, expected_video_id)
-    download_temp_dir.mkdir(parents=True, exist_ok=True)
+    download_temp_dir = app.open_video_download_workspace(video_dir, url, expected_video_id)
     video_files_before = app.snapshot_video_files(download_temp_dir)
-    quality_candidate_dir = video_dir / "_quality_candidates" / download_temp_dir.name
-    try:
-        shutil.rmtree(quality_candidate_dir, ignore_errors=True)
-    except Exception:
-        pass
+    quality_root = video_dir / "_quality_candidates"
+    app.ensure_download_work_root(quality_root)
+    quality_candidate_dir = quality_root / f"candidate-{time.time_ns()}"
     proxy_url = app.get_proxy_url()
     proxy_args = app.build_proxy_args()
     return DownloadSetup(

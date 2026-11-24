@@ -14,6 +14,7 @@ import subprocess
 import time
 
 from src.core.constants import MIN_VIDEO_FILE_SIZE_BYTES, SUPPORTED_VIDEO_EXTENSIONS
+from src.core.download_temp import plain_download_path
 
 
 class YtDlpResultsMixin:
@@ -144,17 +145,16 @@ class YtDlpResultsMixin:
 
 
     def wait_for_file(self, file_path: str, timeout: int = 15) -> bool:
+        """Wait for the publisher's exact path before validating the file again."""
         if not file_path:
             return False
         path = Path(file_path)
-        if path not in self.snapshot_video_files(path.parent):
-            # Wait only for the exact final path, never for an alternate temp file.
-            if ".temp." in path.name or re.search(r"\.f\d+\.", path.name):
-                return False
+        if not self.is_supported_video_file(path):
+            return False
         deadline = time.monotonic() + timeout
         while not self.cancel_flag.is_set():
             try:
-                if path.is_file() and path.stat().st_size >= MIN_VIDEO_FILE_SIZE_BYTES:
+                if plain_download_path(path) and path.stat().st_size >= MIN_VIDEO_FILE_SIZE_BYTES:
                     return True
             except OSError:
                 pass

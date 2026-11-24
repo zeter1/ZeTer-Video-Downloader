@@ -40,6 +40,7 @@ class CompletionNotificationMixin:
                 except queue.Empty:
                     break
                 self._finish_download_ui(*result)
+            self.refresh_download_dashboard()
         finally:
             if not self._completion_closed:
                 self._completion_after_id = self.root.after(100, self._poll_download_completion)

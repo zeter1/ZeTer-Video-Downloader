@@ -2,7 +2,11 @@
 
 import unittest
 from pathlib import Path
+from threading import Lock
+from unittest.mock import Mock, patch
 
+from src.downloads.history import DownloadHistoryMixin
+from src.downloads.task import DownloadTaskMixin
 from src.downloads.youtube_access import YouTubeAccessMixin
 from src.downloads.youtube_command import build_ytdlp_download_command
 
@@ -44,6 +48,60 @@ class NetworkAccessTests(unittest.TestCase):
                 self.assertEqual('--proxy' in command, enabled)
                 if enabled:
                     self.assertEqual(command[command.index('--proxy') + 1], app.settings['proxy_url'])
+
+
+class DownloadStart(DownloadTaskMixin, DownloadHistoryMixin):
+    pass
+
+
+class DownloadPacingTests(unittest.TestCase):
+    def setUp(self):
+        self.app = DownloadStart()
+        self.app.total_files = Mock()
+        self.app.log = Mock()
+        self.app.record_problem = Mock()
+        self.app.file_logger = Mock()
+        self.app.validate_url = Mock(return_value=True)
+        self.app.should_skip_downloaded = Mock(return_value=False)
+        self.app.cancel_flag = Mock()
+        self.app.cancel_flag.is_set.return_value = False
+        self.app.cancel_flag.wait.side_effect = self.advance_clock
+        self.app.youtube_strategy_state_lock = Lock()
+        self.app.run_yt_dlp_with_download_slot = Mock(return_value=None)
+        self.app.update_progress = Mock()
+        self.now = 10.0
+        clock = patch('src.downloads.task.monotonic', side_effect=lambda: self.now, create=True)
+        clock.start()
+        self.addCleanup(clock.stop)
+
+    def advance_clock(self, elapsed):
+        self.assertFalse(self.app.youtube_strategy_state_lock.locked())
+        self.now += elapsed
+        return False
+
+    def download(self, url, index):
+        self.app.download_single_video(url, index, [], [], [])
+
+    def test_only_consecutive_youtube_starts_need_remaining_pause(self):
+        self.download('https://vimeo.com/1', 5)
+        self.download('https://youtu.be/abcdefghijk', 6)
+        self.now += 1.0
+        self.download('https://dailymotion.com/video/1', 7)
+        self.download('https://www.youtube.com/watch?v=lmnopqrstuv', 8)
+        self.now += 20.0
+        self.download('https://youtube.com/watch?v=12345678901', 9)
+
+        self.app.cancel_flag.wait.assert_called_once_with(2.0)
+        self.assertEqual(self.app.run_yt_dlp_with_download_slot.call_count, 5)
+
+    def test_cancellation_interrupts_pause_before_youtube_download(self):
+        self.download('https://youtube.com/watch?v=12345678901', 0)
+        self.app.cancel_flag.wait.side_effect = None
+        self.app.cancel_flag.wait.return_value = True
+        self.download('https://youtu.be/abcdefghijk', 1)
+
+        self.app.cancel_flag.wait.assert_called_once_with(3.0)
+        self.app.run_yt_dlp_with_download_slot.assert_called_once()
 
 
 if __name__ == '__main__':

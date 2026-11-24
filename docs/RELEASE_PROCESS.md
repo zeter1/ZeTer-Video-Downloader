@@ -7,7 +7,7 @@
 ## 1. Что происходит при push
 
 - `push` в `main` / `pull_request`: офлайн-проверки Python в Linux (**за исключением Markdown и `docs/**`** благодаря `paths-ignore`).
-- `workflow_dispatch`: запускает тесты и Windows packaging.
+- `workflow_dispatch`: запускает тесты и сборку Windows.
 - `push` с `[package]` в сообщении коммита: после успешных тестов запускает Windows packaging и публикацию GitHub Release. В этом **же коммите** должен быть обновлён `RELEASE_NOTES_RU.md`; иначе release job завершится ошибкой.
 - **Обычный docs-коммит не должен запускать Windows packaging.** Не добавляйте `[package]` в сообщение без необходимости.
 
@@ -29,11 +29,11 @@
 1. Получите актуальный `main`, проверьте изменения кода, зависимости и `CHANGELOG.md`, прочитайте правила `AGENTS.md` и относящиеся к задаче разделы [CODE_MAP.md](CODE_MAP.md).
 2. Локально или в CI выполните:
    ```powershell
-   python -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+   python -m compileall -q "ZeTer Video Downloader .py" problem_log_validator.py src scripts tests
    python scripts/check_codex_efficiency.py
    python -m unittest discover -s tests -v
    ```
-3. Актуализируйте `RELEASE_NOTES_RU.md`: версия, дата, реальные изменения, результаты проверок и честные ограничения. Не переносите старые числа тестов без нового выполнения.
+3. Актуализируйте `RELEASE_NOTES_RU.md`. Укажите версию и фактические изменения. Команда `python scripts/check_release_notes.py` сверяет заголовок с `APP_VERSION` перед сборкой при любом способе запуска.
 4. Выберите способ: **workflow_dispatch** вручную либо явно подготовленный `[package]`-коммит **вместе** с обновлёнными русскими release notes. Не делайте много package-пушей подряд.
 5. Следите за `test → package-windows → publish-release`. Если произошёл сбой, сначала получите упавший step и его логи; отличайте регрессию кода от сбоя внешнего инструмента, сети, разрешений и workflow. Не отключайте тесты ради публикации.
 6. Убедитесь, что появился `build-<7 первых символов commit>` и в Assets есть **оба** файла: `ZeTer-Video-Downloader.exe` и `ZeTer-Video-Downloader.sha256.txt`. Выпуски отмечены как **Prerelease**, поэтому `/releases/latest` может их не показывать.

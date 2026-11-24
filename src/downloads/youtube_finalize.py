@@ -41,7 +41,7 @@ def finalize_lower_quality_candidate(
     if not path.exists():
         return None
     try:
-        result = app.finalize_downloaded_video_file(str(path), video_dir, expected_video_id)
+        result = app.finalize_downloaded_video_file(str(path), video_dir, expected_video_id, url=url)
         if not result:
             return None
         app.log(

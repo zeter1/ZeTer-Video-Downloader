@@ -110,6 +110,10 @@ def build_ytdlp_strategy_plan(app, url: str, quality: str):
         {'name': 'Android Client small chunks', 'fallback_format': False,
          'args': ["--extractor-args", "youtube:player_client=android"],
          'network_args': safe_chunk_network_args, 'ejs_mode': 'github'},
+        # Leave room within the retry budget for an HLS-only catalog. If this
+        # yields a lower-quality file, the downloader still looks for 1080p.
+        {'name': 'Any Format Default small chunks', 'fallback_format': True,
+         'args': [], 'network_args': neutral_network_args, 'ejs_mode': 'github'},
         {'name': 'Android Client tiny chunks', 'fallback_format': False,
          'args': ["--extractor-args", "youtube:player_client=android"],
          'network_args': tiny_chunk_network_args, 'ejs_mode': 'github'},
@@ -128,10 +132,7 @@ def build_ytdlp_strategy_plan(app, url: str, quality: str):
          'args': [], 'network_args': no_force_ipv4_network_args, 'ejs_mode': 'github'},
         {'name': 'Default Client small chunks no force IPv4', 'fallback_format': False,
          'args': [], 'network_args': neutral_network_args, 'ejs_mode': 'github'},
-        # Any-protocol 1080p is intentionally late. Current YouTube can expose
-        # fragmented HLS video that downloads fully but fails in FFmpeg merge.
-        # We first exhaust direct HTTP/DASH 1080p clients, then try one verbose
-        # any-format attempt so diagnostics capture the exact ffmpeg failure.
+        # Extra any-protocol routes follow the remaining direct clients.
         {'name': 'Slow direct any format 90 sec timeout', 'fallback_format': True,
          'diagnostic_verbose': True,
          'args': [], 'network_args': tiny_chunk_network_args,
@@ -143,16 +144,8 @@ def build_ytdlp_strategy_plan(app, url: str, quality: str):
         {'name': 'Any Format Mobile Web without HTTP chunks', 'fallback_format': True,
          'args': ["--extractor-args", "youtube:player_client=mweb"],
          'network_args': no_chunk_network_args, 'ejs_mode': 'github'},
-        {'name': 'Default + Chrome Cookies without HTTP chunks', 'fallback_format': False,
-         'args': ["--cookies-from-browser", "chrome"],
-         'network_args': no_chunk_network_args, 'ejs_mode': 'github'},
-        {'name': 'Any Format Default small chunks', 'fallback_format': True,
-         'args': [], 'network_args': neutral_network_args, 'ejs_mode': 'github'},
         {'name': 'Any Format Default tiny chunks no force IPv4', 'fallback_format': True,
          'args': [], 'network_args': neutral_tiny_chunk_network_args, 'ejs_mode': 'github'},
-        {'name': 'Any Format Chrome Cookies small chunks', 'fallback_format': True,
-         'args': ["--cookies-from-browser", "chrome"],
-         'network_args': neutral_network_args, 'ejs_mode': 'github'},
         # Последняя страховка: без EJS, чтобы скачать хотя бы доступный
         # progressive/низкий формат, если remote-components не скачиваются.
         {'name': 'Emergency progressive without EJS remote components', 'fallback_format': False,

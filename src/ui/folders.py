@@ -21,16 +21,12 @@ class FoldersMixin:
             self.log(f"❌ Не удалось открыть папку {error_label}: {e}", "ERROR")
 
 
-    def open_history_folder(self, event=None) -> None:
-        self.open_folder_path(self.history_dir, "История ссылок")
+    def open_download_archive_folder(self, event=None) -> None:
+        self.open_folder_path(self.download_archive_dir, self.download_archive_dir.name)
 
 
     def open_download_links_folder(self, event=None) -> None:
         self.open_folder_path(self.download_links_dir, "Ссылки на скачивания")
-
-
-    def open_downloaded_sessions_folder(self, event=None) -> None:
-        self.open_folder_path(self.downloaded_sessions_dir, "Логи скачивания/Сессии скачанных")
 
 
     def open_manual_processing_folder(self, event=None) -> None:

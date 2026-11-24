@@ -17,11 +17,12 @@
 2. Сначала изолированный regression test (когда это применимо), затем **минимальный diff**. Не склеивайте fix с несвязанным рефакторингом.
 3. Не скрывайте провалы `except: pass`, отключением проверок или `continue-on-error`. Классифицируйте причину: код, внешняя сеть, инструменты, файл или среда.
 4. Для пользовательского поведения сохраняйте существующие контракты: видео MP4 не выше 1080p, проверка ffprobe, MP3 после успешного видео, корректные статусы/отмена, сохранение настроек и истории.
-5. Для изменения кода обновите [CHANGELOG.md](../CHANGELOG.md) и связанную документацию. Указания на версии/релизы берите из текущих файлов и workflow.
+5. Для изменения кода обновите [CHANGELOG.md](../CHANGELOG.md) и связанную документацию.
+6. При каждом завершённом изменении увеличьте второе число `APP_VERSION` в [constants.py](../src/core/constants.py). Укажите ту же версию в новой записи CHANGELOG и обновите поля версии [Windows EXE](../packaging/windows_version_info.txt), где после номера приложения добавляется `.0.0`.
 
 ## Owner-границы
 
-- `video_downloader.py → src/bootstrap.py → src/application.py` — запуск/композиция, не хранилище новой бизнес-логики.
+- `ZeTer Video Downloader .py` → `src/bootstrap.py` → `src/application.py` — запуск/композиция, не хранилище новой бизнес-логики.
 - `downloads/youtube_downloader.py` — управление одной загрузкой; `youtube_attempt.py` — контекст попытки; `youtube_retry.py` — классификация; `youtube_success.py` — успех/кандидат; `youtube_finalize.py` — финальный резерв/отчёт.
 - `youtube_command.py` — CLI/формат; `youtube_strategy_catalog.py` — каталог стратегий; `youtube_queue_policy.py` — бюджет/временные исключения очереди.
 - `core/app_updates.py` — сравнение релизов и безопасная замена EXE; `ui/update_controls.py` — поток/UI и согласие. Детали: [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
@@ -34,7 +35,7 @@
 Из корня репозитория с установленными Python-зависимостями:
 
 ```powershell
-python -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+python -m compileall -q "ZeTer Video Downloader .py" problem_log_validator.py src scripts tests
 python scripts/check_codex_efficiency.py
 python -m unittest discover -s tests -v
 ```
@@ -42,6 +43,15 @@ python -m unittest discover -s tests -v
 Сначала можно запустить **узкий** тест из маршрутизатора `codex_scope.py`. После изменения диагностики полезно выполнить `python problem_log_validator.py --examples`. Падающий тест требует разбора; если среда не содержит FFmpeg/JS runtime — это нужно указать отдельно, а не выдать за успешную проверку.
 
 Offline-тесты и `--self-test` не подтверждают внешний вид Tkinter, реальную загрузку YouTube или безопасную замену EXE на Windows. Для затронутой области отдельно нужны runtime/Windows/manual checks; если не проведены — **NOT VERIFIED**.
+
+### Сквозная проверка очистки очереди
+
+1. Сделайте новую временную копию исходников с файлом запуска `ZeTer Video Downloader .py` и папкой `src`. Настройки и историю рабочего экземпляра не копируйте. Рядом с файлом запуска создайте `Настройки/settings.json` с содержимым `{"auto_check_updates": false, "save_path": "."}`.
+2. В копии создайте `История скачиваний/История ссылок/downloaded_smoke.txt` в UTF-8 с одной строкой `https://www.youtube.com/watch?v=00000000000`. В `История скачиваний/Текущая очередь.txt` запишите другую ссылку, например `https://www.youtube.com/watch?v=11111111111`.
+3. Из каталога копии запустите `python "ZeTer Video Downloader .py"`. Убедитесь, что тестовая очередь видна. Нажмите «Очистить очередь», подтвердите действие, закройте приложение и снова запустите его из той же копии. Поле «Добавить ссылки» и список очереди должны быть пустыми. Скачивание запускать не нужно.
+4. Проверьте, что `downloaded_smoke.txt` остался с прежним содержимым. Вставьте ссылку из истории в поле «Добавить ссылки» и убедитесь, что очередь отмечает её как уже скачанную при включённом параметре «Пропускать скачанные видео».
+
+Быстрая автоматическая проверка того же контракта: `python -m unittest discover -s tests -p test_queue_state.py`. Она проверяет сохранение истории, очистку черновика и отсутствие автовозобновления через тестовые объекты.
 
 ## GitHub / Actions / завершение
 

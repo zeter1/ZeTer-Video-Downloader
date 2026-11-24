@@ -8,7 +8,7 @@
 
 | Готовый Windows EXE | Запуск из исходников |
 | --- | --- |
-| Скачан из [GitHub Releases](https://github.com/zeter1/ZeTer-Video-Downloader/releases), Windows x64 | Запущен командой `python video_downloader.py` |
+| Скачан из [GitHub Releases](https://github.com/zeter1/ZeTer-Video-Downloader/releases), Windows x64 | Запущен командой `python "ZeTer Video Downloader .py"` |
 | yt-dlp, FFmpeg, ffprobe и Deno **уже внутри EXE** | Требуются Python-зависимости, FFmpeg/ffprobe в `PATH`, а для отдельных сайтов может понадобиться Deno/Node.js |
 | `pip install -U yt-dlp` не изменяет встроенный yt-dlp | `python -m pip install -U yt-dlp` обновляет пакет **в используемом Python-окружении** |
 | Служебные файлы хранятся рядом с EXE | Служебные файлы хранятся в корне репозитория |

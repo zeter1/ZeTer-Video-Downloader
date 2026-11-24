@@ -6,7 +6,7 @@
 python scripts/codex_scope.py "описание задачи"
 ```
 
-Запуск: `video_downloader.py` → `src/bootstrap.py` → `src/application.py`.
+Запуск: `ZeTer Video Downloader .py` → `src/bootstrap.py` → `src/application.py`.
 `application.py` только собирает mixin-класс; состояние: `src/app/state.py`, пути: `src/app/paths.py`.
 
 ## Owner по симптому
@@ -14,6 +14,7 @@ python scripts/codex_scope.py "описание задачи"
 | Задача | Читать сначала | Затем при необходимости |
 |---|---|---|
 | Скачивание не стартует | `downloads/manager.py`, `task.py` | `progress.py`, `core/session_settings.py` |
+| Очередь пропала или не возобновилась | `downloads/queue_state.py`, `app/paths.py` | `manager.py`, `downloads/files.py`, `tests/test_queue_state.py` |
 | yt-dlp lifecycle/fallback | `downloads/youtube_downloader.py` | `youtube_attempt.py`, `youtube_success.py`, `youtube_finalize.py` |
 | Ошибки 403/cookies/googlevideo/retry | `downloads/youtube_retry.py` | `youtube_strategy.py`, `youtube_downloader.py` |
 | `Conversion failed`/FFmpeg merge/timestamps | `downloads/youtube_failure_diagnostics.py`, `youtube_recovery.py` | `youtube_failure_reporting.py`, `youtube_command.py`, `core/subprocess_runner.py` |
@@ -29,6 +30,7 @@ python scripts/codex_scope.py "описание задачи"
 | Настройки | `core/settings.py` | `core/session_settings.py`, `ui/settings_controls.py` |
 | MP3 | `audio/convert.py`, `merge.py`, `split.py` | `downloads/media_validation.py` |
 | UI | нужный `ui/*.py` | `ui/layout.py` |
+| Статусы и фильтры очереди в интерфейсе | `ui/download_dashboard.py`, `downloads/session_view.py` | `downloads/manager.py`, `downloads/task.py`, `audio/convert.py` |
 | Уведомление о завершении / блокировка папки | `ui/completion_notification.py`, `downloads/progress.py` | `downloads/manager.py`, `ui/settings_controls.py`, `tests/test_completion_notification.py` |
 | Логи проблем | `diagnostics/reporting.py`, `events.py` | `snapshots.py` |
 | Retention | `diagnostics/retention.py` | `retention_*` |

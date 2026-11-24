@@ -286,6 +286,10 @@ class CompletionDeliveryTests(unittest.TestCase):
                             proxy_enabled=False, proxy_url='')
         app.url_text = Mock()
         app.url_text.get.return_value = 'https://example.invalid/video'
+        app.draft_queue_path = self.directory / "Текущая очередь.txt"
+        app.started_queues_dir = self.directory / "Очереди запуска"
+        app._draft_on_disk = None
+        app._draft_read_failed = False
         app.validate_url = lambda url: True
         app.deduplicate_urls_by_identity = lambda urls: (urls, [])
         app.is_url_downloaded = lambda url: False
@@ -345,6 +349,21 @@ class CompletionDeliveryTests(unittest.TestCase):
         self.assertEqual(self.app.save_path_entry.options['state'], 'normal')
         self.assertEqual(self.app.browse_path_btn.options['state'], 'normal')
         self.assertEqual(len(self.app._completion_windows), 1)
+
+    def test_resume_audio_only_launches_worker_with_original_audio_options(self):
+        self.prepare_start()
+        app = self.app
+        app._batch = {
+            "status": "active", "directory": str(self.directory),
+            "audio_options": {"audio_quality": "192k", "merge_audio": True},
+        }
+        app.missing_deps = ["yt-dlp"]
+        with patch('src.downloads.manager.threading.Thread') as worker:
+            app.start_download(resume_urls=[])
+        self.assertTrue(app.is_downloading)
+        self.assertEqual(worker.call_args.kwargs["args"], ([],))
+        self.assertEqual(app.download_settings_snapshot["audio_quality"], "192k")
+        self.assertTrue(app.download_settings_snapshot["merge_audio"])
 
     def test_folder_dialog_result_is_ignored_if_task_started_while_dialog_was_open(self):
         self.app.is_downloading = False

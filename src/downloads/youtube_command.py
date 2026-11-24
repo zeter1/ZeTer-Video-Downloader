@@ -9,6 +9,7 @@ from typing import List
 from pathlib import Path
 
 from src.core.constants import VIDEO_MAX_HEIGHT, YT_DLP_EXTRACTOR_RETRIES, YT_DLP_FRAGMENT_RETRIES, YT_DLP_NETWORK_RETRY_PAUSE_SEC, YT_DLP_RETRIES, YT_DLP_SOCKET_TIMEOUT
+from src.core.download_temp import RESUME_RESULT_PREFIX, resume_workspace_key
 from src.core.session_settings import session_setting
 
 
@@ -154,10 +155,10 @@ def build_ytdlp_download_command(
         "--progress",
         "--newline",
         "--throttled-rate", "100K",
-        "--continue",
+        "--continue", "--part",
         "--no-mtime",
         "--print", "before_dl:[DOWNLOAD_PLAN] id=%(id)s format_id=%(format_id)s protocol=%(protocol)s ext=%(ext)s height=%(height)s width=%(width)s vcodec=%(vcodec)s acodec=%(acodec)s language=%(language)s format_note=%(format_note)s",
-        "--print", "after_move:filepath",
+        "--print", f"after_move:{RESUME_RESULT_PREFIX}%(filepath)s",
     ]
     if proxy_args:
         cmd.extend(proxy_args)
@@ -171,6 +172,8 @@ def build_ytdlp_download_command(
     if is_youtube:
         strategy_args = _with_youtube_language_preference(strategy_args)
     cmd.extend(strategy_args)
+    # Override global yt-dlp configuration that would implicitly load a browser profile.
+    cmd.append("--no-cookies-from-browser")
     if strategy.get("diagnostic_verbose"):
         cmd.append("--verbose")
     cmd.extend(video_format_args(
@@ -183,9 +186,17 @@ def build_ytdlp_download_command(
     if session_setting(app, "download_subtitles"):
         cmd.extend(["--write-sub", "--write-auto-sub", "--sub-lang", "ru,en"])
 
-    output_template = download_temp_dir / "%(title)s.%(ext)s"
+    # --trim-filenames also truncates the directory on current yt-dlp.
+    # Limit only the title so the format prefix survives in deep paths.
+    name_template = "%(title).150B.%(ext)s"
+    key = resume_workspace_key(download_temp_dir)
+    if key:
+        transport = "external" if "--downloader" in strategy_args else "native"
+        name_template = f"ZVD-{key[:8]} [{transport}-%(protocol)s-%(format_id)s] {name_template}"
+    # The existing directory is literal even when its name contains a percent sign.
+    output_template = Path(str(download_temp_dir).replace("%", "%%")) / name_template
     cmd.extend([
-        "--windows-filenames", "--trim-filenames", "240",
+        "--windows-filenames",
         "-o", str(output_template), url,
     ])
     return (

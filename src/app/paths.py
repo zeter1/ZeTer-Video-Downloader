@@ -36,12 +36,13 @@ def initialize_app_paths(app) -> None:
     """Создать все пути приложения и выполнить безопасные legacy-миграции."""
     app.app_dir = get_program_dir()
     app.settings_file = app.app_dir / "Настройки" / "settings.json"
-    app.log_dir = app.app_dir / "Логи скачивания"
+    app.download_archive_dir = app.app_dir / "История скачиваний"
+    app.log_dir = app.download_archive_dir / "Логи скачивания"
     app.log_file = app.log_dir / "download_log.txt"
     app.video_ids_file = app.log_dir / "video_ids.txt"
     app.downloaded_sessions_dir = app.log_dir / "Сессии скачанных"
-    app.history_dir = app.app_dir / "История ссылок"
-    app.download_links_dir = app.app_dir / "Ссылки на скачивания"
+    app.history_dir = app.download_archive_dir / "История ссылок"
+    app.download_links_dir = app.download_archive_dir / "Ссылки на скачивания"
     app.manual_processing_dir = app.app_dir / "Обработать вручную"
     app.history_file = app.history_dir / "downloaded_history.txt"
     app.problem_log_dir = app.app_dir / "Логи проблем"
@@ -88,11 +89,24 @@ def initialize_app_paths(app) -> None:
     # Флаг нужен до полной загрузки UI и setup_logger().
     app.problem_logging_enabled = app.read_problem_logging_setting_default(True)
 
+    legacy_log_dirs = (app.app_dir / app.log_dir.name, app.app_dir / "Log_download")
+    old_sessions_name = "Downloaded_Sessions"
+    app.legacy_history_dirs = (
+        app.app_dir / app.history_dir.name,
+        app.app_dir / "History_Links",
+    )
+    # Читаем оставшуюся историю и при частичном переносе (например, занят файл).
+    app.legacy_downloaded_sessions_dirs = (
+        app.log_dir / old_sessions_name,
+        *(directory / name for directory in legacy_log_dirs
+          for name in (app.downloaded_sessions_dir.name, old_sessions_name)),
+    )
     app.legacy_folder_migrations = [
         (app.app_dir / "Settings", app.settings_file.parent),
-        (app.app_dir / "Log_download", app.log_dir),
-        (app.log_dir / "Downloaded_Sessions", app.downloaded_sessions_dir),
-        (app.app_dir / "History_Links", app.history_dir),
+        *((directory, app.log_dir) for directory in legacy_log_dirs),
+        (app.log_dir / old_sessions_name, app.downloaded_sessions_dir),
+        *((directory, app.history_dir) for directory in app.legacy_history_dirs),
+        (app.app_dir / app.download_links_dir.name, app.download_links_dir),
         (app.app_dir / "Failed_Downloads", app.manual_processing_dir),
         (app.app_dir / "Неудачные загрузки", app.manual_processing_dir),
         (app.app_dir / "Не конвертировалось", app.manual_processing_dir),

@@ -5,10 +5,13 @@ loading Tkinter, diagnostics, subprocess helpers, or feature logic.
 """
 
 MAX_LOG_LINES        = 1000
-APP_VERSION          = "6.3 MP4 OUTPUT + 1080P PRIORITY"
+APP_VERSION          = "6.24"
+SOURCE_LAUNCHER_NAME = "ZeTer Video Downloader .py"
 MAX_VIDEOS_PER_LIST  = 1000
 MAX_CONCURRENT_DL    = 2
 MAX_SPLIT_HOURS      = 10
+DEFAULT_AUDIO_QUALITY = "128k"
+AUDIO_QUALITIES = ("128k", "192k", "256k", "320k", "VBR-0 (лучшее)")
 MAX_URLS_PER_SESSION = 500
 DOWNLOAD_TIMEOUT_SEC = 3600   # 1 час
 YT_DLP_MAX_FAILED_ATTEMPTS = 12
@@ -20,7 +23,6 @@ FETCH_TITLE_TIMEOUT  = 10
 LOG_FLUSH_INTERVAL   = 50     # мс — интервал батч-сброса лога в UI
 DOWNLOAD_HISTORY_RETENTION_DAYS = 60
 PROBLEM_LOG_RETENTION_DAYS = 120
-MAX_DOWNLOAD_LINK_SESSIONS = 40  # сколько последних сессий очереди ссылок хранить
 LOG_ENTRY_SPACING_PX = 4      # вертикальный отступ между строками лога
 LOG_TAB_ALL = "all"
 LOG_TAB_DOWNLOAD_FAILED = "download_failed"
@@ -35,10 +37,11 @@ VIDEO_MAX_HEIGHT = 1080
 VIDEO_TARGET_HEIGHT = 1080
 SUPPORTED_VIDEO_EXTENSIONS = ("mp4", "webm", "mkv", "m4v", "mov")
 SOURCE_CODE_FILES = (
-    'video_downloader.py',
+    SOURCE_LAUNCHER_NAME,
     'src/__init__.py',
     'src/app/__init__.py',
     'src/app/paths.py',
+    'src/app/profile_lock.py',
     'src/app/state.py',
     'src/application.py',
     'src/audio/__init__.py',
@@ -56,6 +59,7 @@ SOURCE_CODE_FILES = (
     'src/core/session_settings.py',
     'src/core/settings.py',
     'src/core/subprocess_runner.py',
+    'src/core/windows_child_job.py',
     'src/core/ytdlp_runtime.py',
     'src/diagnostics/__init__.py',
     'src/diagnostics/classification.py',
@@ -87,6 +91,7 @@ SOURCE_CODE_FILES = (
     'src/downloads/media_validation.py',
     'src/downloads/mp4_output.py',
     'src/downloads/progress.py',
+    'src/downloads/queue_state.py',
     'src/downloads/session_reports.py',
     'src/downloads/task.py',
     'src/downloads/urls.py',

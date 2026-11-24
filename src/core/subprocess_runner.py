@@ -14,6 +14,7 @@ import time
 
 from src.core.constants import YT_DLP_HEARTBEAT_INTERVAL_SEC, YT_DLP_INACTIVITY_TIMEOUT_SEC, YT_DLP_PROGRESS_MIN_PERCENT_DELTA, YT_DLP_PROGRESS_STALL_TIMEOUT_SEC, YT_DLP_RUNTIME_MAX_CAPTURED_LINES, YT_DLP_ZERO_SPEED_STALL_TIMEOUT_SEC
 from src.core.errors import CommandCancelledError, CommandTimeoutError, ProblematicDownloadSkipped
+from src.core.windows_child_job import close_owned_process_job, launch_owned_process
 
 
 _YTDLP_DIAGNOSTIC_LANDMARKS = (
@@ -129,13 +130,17 @@ class SubprocessRunnerMixin:
                                 time.time() - float(progress_state.get("last_real_progress_time", time.time())), 1
                             ),
                         })
+                    if progress_info:
+                        runtime_update["display_percent"] = progress_info.get("percent")
+                        runtime_update["display_speed"] = progress_info.get("speed_text", "")
+                        runtime_update["display_at"] = last_output_time
                     self._set_ytdlp_runtime(proc.pid, runtime_update)
                 last_progress_log = self._handle_streamed_yt_dlp_line(
                     clean, context, last_progress_log
                 )
 
         try:
-            proc = subprocess.Popen(
+            proc = launch_owned_process(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -192,6 +197,7 @@ class SubprocessRunnerMixin:
                 returncode = proc.poll()
                 now = time.time()
                 if returncode is not None:
+                    close_owned_process_job(proc)
                     reader_thread.join(timeout=2)
                     while True:
                         try:
@@ -373,8 +379,11 @@ class SubprocessRunnerMixin:
             raise
         finally:
             if proc is not None:
-                self._remove_ytdlp_runtime(proc.pid)
-                self._unregister_process(proc)
+                try:
+                    close_owned_process_job(proc)
+                finally:
+                    self._remove_ytdlp_runtime(proc.pid)
+                    self._unregister_process(proc)
 
 
     def run_command(self, command: List[str], timeout: int,
@@ -389,7 +398,7 @@ class SubprocessRunnerMixin:
         stdout = ""
         stderr = ""
         try:
-            proc = subprocess.Popen(
+            proc = launch_owned_process(
                 command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, encoding='utf-8', errors='replace',
                 env=self._utf8_subprocess_env(),
@@ -450,4 +459,7 @@ class SubprocessRunnerMixin:
             raise
         finally:
             if proc is not None:
-                self._unregister_process(proc)
+                try:
+                    close_owned_process_job(proc)
+                finally:
+                    self._unregister_process(proc)

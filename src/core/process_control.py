@@ -6,6 +6,8 @@
 import platform
 import subprocess
 
+from src.core.windows_child_job import close_owned_process_job
+
 
 class ProcessControlMixin:
     def _register_process(self, proc: subprocess.Popen) -> None:
@@ -19,9 +21,12 @@ class ProcessControlMixin:
 
 
     def terminate_process(self, proc: subprocess.Popen) -> None:
-        if proc.poll() is not None:
-            return
         try:
+            if close_owned_process_job(proc):
+                proc.wait(timeout=5)
+                return
+            if proc.poll() is not None:
+                return
             if platform.system() == "Windows":
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
@@ -51,7 +56,7 @@ class ProcessControlMixin:
             processes = list(self.active_processes.values())
         if processes:
             self.record_problem(
-                "Запрошена остановка активных процессов: снимок перед taskkill/terminate",
+                "Запрошена остановка активных процессов: снимок перед завершением",
                 "WARNING", "terminate_active_processes_snapshot",
                 {
                     "process_count": len(processes),

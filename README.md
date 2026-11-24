@@ -5,7 +5,7 @@
 [![Python checks](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml/badge.svg)](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml)
 [![Releases](https://img.shields.io/badge/Windows-EXE%20Releases-blue?logo=github)](https://github.com/zeter1/ZeTer-Video-Downloader/releases)
 
-**ZeTer Video Downloader** — настольная программа для Windows, которая скачивает видео с сайтов, поддерживаемых [yt-dlp](https://github.com/yt-dlp/yt-dlp), сохраняет видео в **MP4 до 1080p** и автоматически создаёт **MP3** из успешно скачанных роликов.
+**ZeTer Video Downloader** — настольная программа для Windows, которая скачивает видео с YouTube, Vimeo и Dailymotion через [yt-dlp](https://github.com/yt-dlp/yt-dlp), сохраняет видео в **MP4 до 1080p** и автоматически создаёт **MP3** из успешно скачанных роликов.
 
 Программа объединяет загрузку, обработку медиа, очередь ссылок, проверку результатов и диагностику в одном интерфейсе. Для обычного использования достаточно готового EXE: **Python, FFmpeg и другие инструменты отдельно устанавливать не требуется**.
 
@@ -15,6 +15,7 @@
 
 ## Содержание
 
+- [Программа в работе](#программа-в-работе)
 - [Быстрый старт](#быстрый-старт)
 - [Возможности](#возможности)
 - [Использование](#использование)
@@ -27,6 +28,12 @@
 - [Тестирование и сборка](#тестирование-и-сборка)
 - [Ограничения и безопасность](#ограничения-и-безопасность)
 - [Контакты](#контакты)
+
+## Программа в работе
+
+На скриншоте - очередь из шести демороликов. Один ролик уже загружен, два скачиваются параллельно.
+
+![ZeTer Video Downloader 6.24 во время загрузки видео](docs/screenshots/download-queue.jpg)
 
 ## Быстрый старт
 
@@ -65,12 +72,12 @@
 
 ### Обычная загрузка
 
-1. Скопируйте ссылку на видео с сайта, поддерживаемого yt-dlp.
+1. Скопируйте ссылку на видео с YouTube, Vimeo или Dailymotion.
 2. Вставьте одну или несколько ссылок в поле **«Ссылки для скачивания»**, каждую с новой строки. Можно воспользоваться кнопкой **«📋 Вставить из буфера»**.
 3. Укажите **«Путь сохранения»**. Видео сохраняются с приоритетом Full HD (до 1080p); качество видео в интерфейсе не переключается.
-4. При необходимости задайте качество MP3, включите субтитры и измените число потоков.
+4. При необходимости выберите качество MP3 в разделе «Аудио», включите субтитры и измените число потоков.
 5. Нажмите **«▶ Скачать все»**. Ход работы виден во вкладках **«Весь лог загрузки»**, **«Не скачалось»** и **«Ошибки»**.
-6. Дождитесь окончания загрузки и последующей конвертации в MP3. Если задача завершена, программа покажет уведомление. Кнопка **«⏹ Отменить»** останавливает работу.
+6. Дождитесь окончания загрузки и последующей конвертации в MP3. Если задача завершена, программа покажет уведомление. Кнопка **«Отменить»** останавливает обработку. Кнопка **«Продолжить очередь»** возобновляет её с готовыми файлами и настройками MP3 исходной очереди.
 
 В поле ссылок работают **Ctrl+C** (копировать), **Ctrl+X** (вырезать), **Ctrl+A** (выделить всё) и **Ctrl+V** (вставить) при русской и английской раскладках, с включённым и выключенным NumLock.
 
@@ -166,7 +173,7 @@ cd ZeTer-Video-Downloader
 
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe video_downloader.py
+.\.venv\Scripts\python.exe "ZeTer Video Downloader .py"
 ```
 
 Проверка инструментов:
@@ -203,7 +210,7 @@ ffprobe -version
 Проект организован по областям ответственности, чтобы изменение загрузчика, интерфейса или диагностики не требовало правки одного гигантского файла.
 
 ```text
-video_downloader.py → src/bootstrap.py → src/application.py
+ZeTer Video Downloader .py → src/bootstrap.py → src/application.py
                                            ├── src/app/          пути и состояние
                                            ├── src/core/         runtime, настройки, subprocess, обновления
                                            ├── src/downloads/    URL, очереди, yt-dlp, качество, проверка MP4
@@ -230,7 +237,7 @@ scripts/             инструменты навигации и проверк
 Базовые offline-проверки:
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+.\.venv\Scripts\python.exe -m compileall -q "ZeTer Video Downloader .py" problem_log_validator.py src scripts tests
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe scripts/check_codex_efficiency.py
 ```
@@ -250,21 +257,18 @@ scripts/             инструменты навигации и проверк
 
 О потенциальных уязвимостях сообщайте согласно [SECURITY.md](SECURITY.md), не раскрывая секреты в открытом issue.
 
-[↑ К началу](#zeter-video-downloader) · [English version](README_EN.md)
-
-## Контакты для связи:
+## Контакты
 
 **Автор:** [ZeTer / GitHub](https://github.com/zeter1)
 
-- [zeter11@gmail.com](mailto:zeter11@gmail.com)
-- [https://t.me/zeter1](https://t.me/zeter1)
-- [https://www.linkedin.com/in/zeter/](https://www.linkedin.com/in/zeter/)
-- [https://www.facebook.com/zeter1](https://www.facebook.com/zeter1)
-- [https://vk.ru/zeter1](https://vk.ru/zeter1)
-- [https://www.instagram.com/zeter1992/](https://www.instagram.com/zeter1992/)
-- [https://tenchat.ru/zeter](https://tenchat.ru/zeter)
-- [https://x.com/zeter1](https://x.com/zeter1)
-- [https://www.threads.com/@zeter1992](https://www.threads.com/@zeter1992)
-- [https://ok.ru/zeter1](https://ok.ru/zeter1)
-- [https://t.me/zeterchat](https://t.me/zeterchat) - Telegram-группа для общения
-- [https://dkoles.com/](https://dkoles.com/) - сайт.
+- **Email:** [zeter11@gmail.com](mailto:zeter11@gmail.com)
+- **Telegram:** [https://t.me/zeter1](https://t.me/zeter1)
+- **LinkedIn:** [https://www.linkedin.com/in/zeter/](https://www.linkedin.com/in/zeter/)
+- **Профили:** [Facebook](https://www.facebook.com/zeter1) · [VK](https://vk.ru/zeter1) · [Instagram](https://www.instagram.com/zeter1992/) · [TenChat](https://tenchat.ru/zeter) · [X](https://x.com/zeter1) · [Threads](https://www.threads.com/@zeter1992) · [OK](https://ok.ru/zeter1)
+- **Telegram-группа:** [https://t.me/zeterchat](https://t.me/zeterchat)
+
+- **Сайт:** [dkoles.com](https://dkoles.com/)
+
+---
+
+[↑ К началу](#zeter-video-downloader) · [English version](README_EN.md)

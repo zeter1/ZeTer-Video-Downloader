@@ -9,7 +9,7 @@
 4. Полный список методов нужен редко: `docs/CODE_INDEX.md`.
 
 ## Главные инварианты
-- Запуск: `video_downloader.py` → `src/bootstrap.py` → `src/application.py`.
+- Запуск: `ZeTer Video Downloader .py` → `src/bootstrap.py` → `src/application.py`.
 - 1080p: максимум и цель задаются в `src/core/constants.py`.
 - `src/core/runtime.py` — compatibility facade; новый код его не импортирует.
 - Wildcard imports запрещены.

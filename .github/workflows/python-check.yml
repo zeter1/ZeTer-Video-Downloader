@@ -39,7 +39,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Compile Python sources
-        run: python -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+        run: python -m compileall -q "ZeTer Video Downloader .py" problem_log_validator.py src scripts tests
 
       - name: Run offline regression tests
         run: python -m unittest discover -s tests -v
@@ -64,6 +64,9 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements.txt
+
+      - name: Check release notes version
+        run: python scripts/check_release_notes.py
 
       - name: Install Python build dependencies
         shell: pwsh
@@ -116,7 +119,7 @@ jobs:
       - name: Verify source before packaging
         shell: pwsh
         run: |
-          python -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+          python -m compileall -q "ZeTer Video Downloader .py" problem_log_validator.py src scripts tests
           python -m unittest discover -s tests -v
 
       - name: Embed exact build identity
@@ -141,7 +144,7 @@ jobs:
             '--add-binary', "$env:DENO_BINARY;.",
             '--add-binary', "$env:FFMPEG_BINARY;.",
             '--add-binary', "$env:FFPROBE_BINARY;.",
-            'video_downloader.py'
+            'ZeTer Video Downloader .py'
           )
           python -m PyInstaller @args
 

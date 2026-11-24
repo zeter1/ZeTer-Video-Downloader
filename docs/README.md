@@ -39,7 +39,7 @@ python -m unittest discover -s tests
 ## Навигация по исходникам
 
 ```text
-video_downloader.py → src/bootstrap.py → src/application.py
+ZeTer Video Downloader .py → src/bootstrap.py → src/application.py
   src/app/          пути и состояние
   src/core/         настройки, процессы, обновление EXE
   src/downloads/    yt-dlp, URL, очередь, MP4 и ограничения 1080p

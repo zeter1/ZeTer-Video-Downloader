@@ -11,7 +11,7 @@ import hashlib
 import json
 import sys
 
-from src.core.constants import APP_VERSION, PROBLEM_LOG_COMPRESSION_AFTER_DAYS, PROBLEM_LOG_FORMAT_VERSION, PROBLEM_LOG_MAX_DETAILS_PER_SIGNATURE, PROBLEM_LOG_MAX_TOTAL_BYTES, PROBLEM_LOG_RETENTION_DAYS, PROBLEM_LOG_SCHEMA_VERSION, PROBLEM_LOG_SESSION_ARCHIVE_AFTER_DAYS, SOURCE_CODE_FILES
+from src.core.constants import APP_VERSION, PROBLEM_LOG_COMPRESSION_AFTER_DAYS, PROBLEM_LOG_FORMAT_VERSION, PROBLEM_LOG_MAX_DETAILS_PER_SIGNATURE, PROBLEM_LOG_MAX_TOTAL_BYTES, PROBLEM_LOG_RETENTION_DAYS, PROBLEM_LOG_SCHEMA_VERSION, PROBLEM_LOG_SESSION_ARCHIVE_AFTER_DAYS, SOURCE_CODE_FILES, SOURCE_LAUNCHER_NAME
 
 
 class DiagnosticsSchemaMixin:
@@ -163,7 +163,7 @@ class DiagnosticsSchemaMixin:
 
     def _entry_source_file(self) -> str:
         base_dir = Path(getattr(self, "app_dir", Path(__file__).resolve().parent))
-        return str((base_dir / "video_downloader.py").resolve())
+        return str((base_dir / SOURCE_LAUNCHER_NAME).resolve())
 
 
     def _settings_hash_for_manifest(self) -> Optional[str]:

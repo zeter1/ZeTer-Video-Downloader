@@ -5,7 +5,7 @@
 [![Python checks](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml/badge.svg)](https://github.com/zeter1/ZeTer-Video-Downloader/actions/workflows/python-check.yml)
 [![Releases](https://img.shields.io/badge/Windows-EXE%20Releases-blue?logo=github)](https://github.com/zeter1/ZeTer-Video-Downloader/releases)
 
-**ZeTer Video Downloader** is a Windows desktop application that downloads videos from sites supported by [yt-dlp](https://github.com/yt-dlp/yt-dlp), produces **MP4 video up to 1080p**, and automatically generates **MP3 audio** from successfully downloaded videos.
+**ZeTer Video Downloader** is a Windows desktop application that downloads videos from YouTube, Vimeo and Dailymotion via [yt-dlp](https://github.com/yt-dlp/yt-dlp), produces **MP4 video up to 1080p**, and automatically generates **MP3 audio** from successfully downloaded videos.
 
 The application combines downloading, media processing, URL queue management, output validation and diagnostics in one interface. End users can run the packaged EXE **without separately installing Python, FFmpeg or the other bundled tools**.
 
@@ -65,12 +65,12 @@ The PyInstaller Windows build includes **yt-dlp, FFmpeg, ffprobe and Deno**. No 
 
 ### Download one or more videos
 
-1. Copy a video link from a website supported by yt-dlp.
+1. Copy a video link from YouTube, Vimeo or Dailymotion.
 2. Paste one or more URLs into **«Ссылки для скачивания»** (Download links), **one URL per line**, or click **«📋 Вставить из буфера»** (Paste from clipboard).
 3. Set **«Путь сохранения»** (Save location). Video quality is automatically managed with a preference for Full HD and a maximum of 1080p; there is no manual video-resolution selector.
-4. Optionally choose the MP3 quality, subtitles and number of concurrent downloads.
+4. Optionally choose the MP3 quality under **«Аудио»** (Audio), subtitles and number of concurrent downloads.
 5. Click **«▶ Скачать все»** (Download all). Follow progress in **«Весь лог загрузки»** (All logs), **«Не скачалось»** (Failed downloads) and **«Ошибки»** (Errors).
-6. Wait for both download and MP3 conversion to finish. The app shows a completion notification; **«⏹ Отменить»** (Cancel) stops processing.
+6. Wait for both download and MP3 conversion to finish. The app shows a completion notification; **«Отменить»** (Cancel) stops processing. **«Продолжить очередь»** (Resume queue) reuses finished files and the original queue’s MP3 settings.
 
 Duplicate URLs in a queue are removed; videos recorded as previously downloaded are normally skipped. **«🗂 Очистить лог скачанных»** clears the downloaded-video record, so use it deliberately.
 
@@ -158,7 +158,7 @@ cd ZeTer-Video-Downloader
 
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe video_downloader.py
+.\.venv\Scripts\python.exe "ZeTer Video Downloader .py"
 ```
 
 Check the tools:
@@ -195,7 +195,7 @@ More technical and support documentation (in Russian): **[documentation hub](doc
 The project is split by responsibility so a downloader, UI or diagnostic change does not require modifying one monolithic file.
 
 ```text
-video_downloader.py → src/bootstrap.py → src/application.py
+ZeTer Video Downloader .py → src/bootstrap.py → src/application.py
                                            ├── src/app/          paths and state
                                            ├── src/core/         runtime, settings, subprocess, updates
                                            ├── src/downloads/    URL, queue, yt-dlp, quality, MP4 validation
@@ -222,7 +222,7 @@ Technical design highlights:
 Run the baseline offline checks:
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q video_downloader.py problem_log_validator.py src scripts tests
+.\.venv\Scripts\python.exe -m compileall -q "ZeTer Video Downloader .py" problem_log_validator.py src scripts tests
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe scripts/check_codex_efficiency.py
 ```
@@ -251,6 +251,8 @@ For potential vulnerabilities, follow [SECURITY.md](SECURITY.md) and do not disc
 - **LinkedIn:** [https://www.linkedin.com/in/zeter/](https://www.linkedin.com/in/zeter/)
 - **Profiles:** [Facebook](https://www.facebook.com/zeter1) · [VK](https://vk.ru/zeter1) · [Instagram](https://www.instagram.com/zeter1992/) · [TenChat](https://tenchat.ru/zeter) · [X](https://x.com/zeter1) · [Threads](https://www.threads.com/@zeter1992) · [OK](https://ok.ru/zeter1)
 - **Telegram group:** [https://t.me/zeterchat](https://t.me/zeterchat)
+
+- **Website:** [dkoles.com](https://dkoles.com/)
 
 ---
 

@@ -15,21 +15,55 @@ import urllib.request
 import urllib.parse
 
 
+DOWNLOAD_DOMAINS = ('youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com')
+_YOUTUBE_VIDEO_ID = re.compile(r'[A-Za-z0-9_-]{11}')
+
+
+def download_url_issue(url: str) -> str:
+    """An empty result means the link can enter the download queue."""
+    url = (url or '').strip()
+    if any(char.isspace() or ord(char) < 32 for char in url):
+        return 'В ссылке есть пробелы или управляющие символы'
+    try:
+        address = urllib.parse.urlparse(url)
+        host = (address.hostname or '').lower().rstrip('.')
+    except ValueError:
+        return 'Некорректная ссылка'
+    if address.scheme not in ('http', 'https') or not host:
+        return 'Нужна ссылка HTTP или HTTPS'
+    if not any(host == domain or host.endswith('.' + domain) for domain in DOWNLOAD_DOMAINS):
+        return 'Сайт не поддерживается'
+    return ''
+
+
 class UrlQueueMixin:
     def extract_video_id(self, url: str) -> Optional[str]:
-        if not url:
+        url = (url or '').strip()
+        if any(char.isspace() or ord(char) < 32 for char in url):
             return None
-        patterns = [
-            r'(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})',
-            r'youtube\.com/embed/([A-Za-z0-9_-]{11})',
-            r'youtube\.com/v/([A-Za-z0-9_-]{11})',
-            r'youtube\.com/shorts/([A-Za-z0-9_-]{11})',
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                return match.group(1)
-        return None
+        try:
+            address = urllib.parse.urlsplit(url)
+            host = (address.hostname or '').lower().rstrip('.')
+        except ValueError:
+            return None
+        if address.scheme not in ('http', 'https'):
+            return None
+
+        path = address.path.removesuffix('/')
+        if host == 'youtu.be':
+            candidate = urllib.parse.unquote(path.removeprefix('/'))
+        elif host == 'youtube.com' or host.endswith('.youtube.com'):
+            if path == '/watch':
+                parameters = urllib.parse.parse_qs(address.query, keep_blank_values=True)
+                candidate = parameters.get('v', [''])[0]
+            else:
+                route, _, segment = path.removeprefix('/').partition('/')
+                if route not in ('embed', 'v', 'shorts', 'live'):
+                    return None
+                candidate = urllib.parse.unquote(segment)
+        else:
+            return None
+        return candidate if _YOUTUBE_VIDEO_ID.fullmatch(candidate) else None
 
 
     def extract_urls_from_text(self, text: str) -> List[str]:
@@ -115,7 +149,7 @@ class UrlQueueMixin:
             self.downloaded_video_ids.add(video_id)
 
 
-    def add_urls_with_check(self, urls: List[str]) -> int:
+    def add_urls_with_check(self, urls: List[str], *, check_history: bool = True) -> int:
         already_downloaded: List[str] = []
         new_urls: List[str] = []
         duplicate_in_batch: List[str] = []
@@ -133,7 +167,7 @@ class UrlQueueMixin:
                 continue
             seen_in_batch.add(identity)
 
-            if self.is_url_downloaded(url):
+            if check_history and self.should_skip_downloaded(url):
                 already_downloaded.append(url)
             else:
                 new_urls.append(url)
@@ -147,7 +181,7 @@ class UrlQueueMixin:
                 msg += f"• {u[:90]}\n"
             if len(already_downloaded) > 8:
                 msg += f"... и ещё {len(already_downloaded) - 8} видео\n"
-            msg += "\nЕсли хотите скачать их повторно — сначала нажмите «Очистить лог скачанных»."
+            msg += "\nДля повторной загрузки снимите галочку «Пропускать скачанные видео»."
             messagebox.showwarning("Видео уже скачаны", msg)
             self.log(f"⚠️ Заблокировано {len(already_downloaded)} уже скачанных URL", "WARNING")
 
@@ -163,24 +197,7 @@ class UrlQueueMixin:
 
 
     def validate_url(self, url: str) -> bool:
-        if not url or not url.strip():
-            return False
-        # FIX #8: только управляющие символы — переносы строк и табы,
-        # которые реально не могут быть частью URL и ломают subprocess.
-        # & % = ? # — нормальные части YouTube-URL, НЕ блокируем.
-        if any(c in url for c in ('\n', '\r', '\t')):
-            self.log(f"⚠️ URL содержит управляющие символы: {url[:60]}", "WARNING")
-            return False
-        try:
-            result = urllib.parse.urlparse(url.strip())
-            if not all([result.scheme in ('http', 'https'), result.netloc]):
-                return False
-            allowed_domains = ['youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com']
-            host = (result.hostname or "").lower().rstrip(".")
-            if not any(host == domain or host.endswith("." + domain)
-                       for domain in allowed_domains):
-                self.log(f"⚠️ Неподдерживаемый домен: {result.netloc}", "WARNING")
-                return False
-            return True
-        except Exception:
-            return False
+        issue = download_url_issue(url)
+        if issue:
+            self.log(f'⚠️ {issue}', 'WARNING')
+        return not issue

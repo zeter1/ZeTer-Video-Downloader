@@ -1,7 +1,7 @@
 """Сборка главного класса приложения из маленьких тематических mixin-модулей.
 
 Корень проекта определяется как папка над src, поэтому Настройки/Логи/Видео
-остаются рядом с video_downloader.py, как и в предыдущей версии.
+остаются рядом с основным сценарием запуска или EXE.
 """
 
 from src.core.constants import APP_VERSION
@@ -27,6 +27,7 @@ from src.downloads.manager import DownloadManagerMixin
 from src.downloads.session_reports import DownloadSessionReportsMixin
 from src.downloads.progress import DownloadProgressMixin
 from src.downloads.link_sessions import DownloadLinkSessionsMixin
+from src.downloads.queue_state import QueueStateMixin
 from src.audio.convert import AudioConvertMixin
 from src.audio.merge import AudioMergeMixin
 from src.audio.split import AudioSplitMixin
@@ -40,6 +41,7 @@ from src.ui.video_list import VideoListMixin
 from src.ui.log_view import LogViewMixin
 from src.ui.folders import FoldersMixin
 from src.ui.layout import UILayoutMixin
+from src.ui.download_dashboard import DownloadDashboardMixin
 from src.ui.update_controls import UpdateControlsMixin
 from src.core.app_updates import installed_build_tag
 from src.diagnostics.migration import DiagnosticsMigrationMixin
@@ -77,6 +79,7 @@ class VideoDownloader(
     DownloadSessionReportsMixin,
     DownloadProgressMixin,
     DownloadLinkSessionsMixin,
+    QueueStateMixin,
     AudioConvertMixin,
     AudioMergeMixin,
     AudioSplitMixin,
@@ -90,6 +93,7 @@ class VideoDownloader(
     LogViewMixin,
     FoldersMixin,
     UILayoutMixin,
+    DownloadDashboardMixin,
     UpdateControlsMixin,
     DiagnosticsMigrationMixin,
     DiagnosticsRetentionMixin,
@@ -123,9 +127,11 @@ class VideoDownloader(
         self.load_download_log()
         self.check_dependencies()
         self.setup_ui()
+        self.initialize_download_dashboard()
         self.root.after(3500, lambda: self.check_app_updates(automatic=True))
         self.initialize_completion_notifications()
         self.initialize_problem_diagnostics()
+        self.initialize_queue_recovery()
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 

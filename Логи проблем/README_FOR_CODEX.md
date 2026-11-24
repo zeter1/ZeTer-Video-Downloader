@@ -27,8 +27,23 @@
 - `strategy_metrics`, `strategy_findings` и `recommended_next_checks` показывают
   неэффективные стратегии и подтверждённо успешные fallback даже при итоговом успехе.
 - В `yt_dlp_download_attempt` сетевые счётчики уже включают текущую попытку.
+- Для ошибок скачивания сначала смотрите `context.failure_analysis`: там stage, kind,
+  likely_root_cause, format_profile и рекомендуемый следующий шаг.
+- `context.yt_dlp_diagnostic_landmarks` сохраняет важные строки отдельно от progress:
+  `DOWNLOAD_PLAN`, выбранные format_id/protocol, downloader, FFmpeg merge и mux/timestamp ошибки.
+- `stream_capture_mode=yt_dlp_stderr_merged_into_stdout` означает, что пустой `stderr` штатный;
+  подробности yt-dlp/FFmpeg нужно искать в stdout и diagnostic landmarks.
+- `target_files_after_attempt` показывает, какие video/audio/.part части остались после сбоя.
 - `attachment.status=suppressed_repetition` означает, что полный повтор не записан из-за лимита.
 - Одинаковые диагностические блоки хранятся один раз по SHA-256.
+- `status` описывает жизненный цикл приложения; `download_outcome` — итог всех очередей.
+- `download_batches` хранит отдельный результат каждой очереди; `download_totals` — суммы
+  по всем очередям текущего запуска. `context` сохраняет последний результат очереди,
+  включая ошибку, и сведения о закрытии. `health_history.jsonl` использует общие суммы.
+- После закрытия `session_started_at` остаётся временем запуска приложения, а не последней очереди.
+- Номер события, его вложение и обе JSONL-копии публикуются последовательно одним writer.
+- Файлы состояния заменяются атомарно уникальным временным файлом. Повтор замены допускается
+  для Windows sharing/lock conflict (32/33); отказ доступа 5 сохраняется в emergency без слепых повторов.
 
 ## Ограничения хранения
 
@@ -43,5 +58,6 @@
 
 Секреты, cookies, пароли, токены и данные авторизации перед записью маскируются.
 
-Отдельная проверка: `python problem_log_validator.py`.
-Постоянные сценарии схем 3/4: `python problem_log_validator.py --examples`.
+Отдельная проверка из корня проекта:
+`python -c "from src.diagnostics.validator import main; raise SystemExit(main())"`.
+Для постоянных сценариев схем 3/4 добавьте к этой команде `--examples`.

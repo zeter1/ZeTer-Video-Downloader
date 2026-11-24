@@ -142,8 +142,8 @@ class DiagnosticsClassificationMixin:
         elif any(x in text for x in ("http error 403", "forbidden")):
             category = "youtube_forbidden_or_client_blocked"
             next_checks.extend([
-                "Проверить порядок fallback-стратегий: другой player_client, cookies, внешний downloader.",
-                "Если 403 повторяется на всех стратегиях, проверить cookies/авторизацию и обновление yt-dlp.",
+                "Проверить порядок резервных стратегий, клиенты и сетевые параметры.",
+                "Если 403 повторяется на всех стратегиях, проверить доступность видео и версию yt-dlp.",
             ])
         elif any(x in text for x in (
             "requested format is not available",
@@ -158,8 +158,8 @@ class DiagnosticsClassificationMixin:
         elif any(x in text for x in ("sign in", "private video", "members-only", "age-restricted", "cookies", "not a bot")):
             category = "auth_or_cookies"
             next_checks.extend([
-                "Проверить, нужна ли авторизация YouTube или cookies браузера.",
-                "Смотреть ошибки --cookies-from-browser и доступность браузера.",
+                "Проверить по stderr, запрошена ли авторизация для этой ссылки.",
+                "Сравнить с результатом открытого видео на том же сайте.",
             ])
         elif any(x in text for x in ("ffmpeg", "ffprobe", "moov atom", "invalid data found")):
             category = "media_validation_or_conversion"

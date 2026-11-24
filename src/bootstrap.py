@@ -8,11 +8,13 @@ import re
 import subprocess
 import sys
 import tkinter as tk
+from tkinter import messagebox
 import traceback
 
 from src.core.constants import PROBLEM_LOG_SCHEMA_VERSION, PROBLEM_LOG_TAIL_CHARS
 from src.core.app_updates import installed_build_tag
 from src.app.paths import get_program_dir, get_runtime_bin_dir
+from src.app.profile_lock import ProfileInUseError, hold_download_profile
 
 PROGRAM_DIR = get_program_dir()
 RUNTIME_BIN_DIR = get_runtime_bin_dir()
@@ -106,22 +108,24 @@ def main() -> None:
     if "--self-test" in sys.argv[1:]:
         raise SystemExit(_run_packaged_self_test())
 
-    app = None
     try:
-        root = tk.Tk()
-        app  = VideoDownloader(root)
-        root.mainloop()
+        with hold_download_profile(PROGRAM_DIR):
+            _run_application()
+    except ProfileInUseError:
+        messagebox.showinfo("ZeTer Video Downloader", "Программа уже открыта.")
     except Exception as e:
-        if app is not None:
-            app._record_uncaught_exception(
-                "main", type(e), e, e.__traceback__
-            )
-        else:
-            _write_startup_emergency_log(e)
+        _write_startup_emergency_log(e)
         print(f"Критическая ошибка: {e}")
         traceback.print_exc()
+
+
+def _run_application() -> None:
+    root = tk.Tk()
+    app = VideoDownloader(root)
+    try:
+        root.mainloop()
+    except Exception as error:
+        app._record_uncaught_exception("main", type(error), error, error.__traceback__)
+        raise
     finally:
-        if app is not None:
-            app.finalize_problem_diagnostics(
-                "finished", "mainloop_finished"
-            )
+        app.finalize_problem_diagnostics("finished", "mainloop_finished")

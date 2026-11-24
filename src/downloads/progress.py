@@ -7,6 +7,8 @@ import time
 import tkinter as tk
 
 from src.core.constants import MAX_CONCURRENT_DL, MAX_SPLIT_HOURS
+from src.core.session_settings import session_setting
+from src.core.settings import normalize_audio_quality
 
 
 class DownloadProgressMixin:
@@ -31,7 +33,7 @@ class DownloadProgressMixin:
         self.settings.update({
             "save_path": self.save_path.get(),
             "quality": "1080p",
-            "audio_quality": self.audio_quality.get(),
+            "audio_quality": normalize_audio_quality(session_setting(self, "audio_quality")),
             "concurrent_downloads": max(1, min(int(concurrent_downloads), MAX_CONCURRENT_DL)),
             "download_subtitles": self.download_subtitles.get(),
             "write_problem_logs": (
@@ -52,6 +54,9 @@ class DownloadProgressMixin:
 
 
     def update_main_progress(self, current: int) -> None:
+        if getattr(self, "_dashboard_session", None) is not None:
+            return  # The existing main-thread poll reads completed_files directly.
+
         def _update():
             total = self.total_files.value()
             if total > 0:
@@ -67,11 +72,17 @@ class DownloadProgressMixin:
 
 
     def cancel_download(self) -> None:
+        if getattr(self, "_closing_download_window", False):
+            return
         self.cancel_flag.set()
+        dashboard = getattr(self, "_dashboard_session", None)
+        if dashboard is not None:
+            dashboard.phase("Останавливаю обработку…")
         stopped = self.terminate_active_processes()
         if stopped:
             self.log(f"🛑 Остановлено активных процессов: {stopped}", "WARNING")
         self.log("🛑 Отмена загрузки...", "WARNING")
+        self.confirm_queue_pause()
 
 
     def finish_download(self) -> None:
@@ -84,19 +95,21 @@ class DownloadProgressMixin:
 
 
     def _finish_download_ui(self, outcome=None, elapsed=None) -> None:
+        if getattr(self, "_closing_download_window", False):
+            return
         self.is_downloading = False
         self.set_save_path_controls_enabled(True)
         self.download_btn.config(state=tk.NORMAL)
         self.cancel_btn.config(state=tk.DISABLED)
-        try:
-            self.main_progress_frame.grid_remove()
-        except Exception:
-            pass
+        self._update_resume_button()
         if elapsed is None:
             elapsed = (time.time() - self.download_start_time
                        if self.download_start_time else 0)
         if outcome is None:
             outcome = getattr(self, "download_outcome", "failed")
+        dashboard = getattr(self, "_dashboard_session", None)
+        if dashboard is not None:
+            dashboard.finish(outcome)
         message, level = {
             "completed": ("✅ Завершено", "SUCCESS"),
             "cancelled": ("🛑 Загрузка отменена", "WARNING"),

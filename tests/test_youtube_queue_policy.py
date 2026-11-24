@@ -11,10 +11,14 @@ from unittest.mock import Mock, patch
 from src.downloads.youtube_downloader import YouTubeDownloaderMixin
 from src.downloads.youtube_strategy import YouTubeStrategyMixin
 from src.downloads.youtube_failure_diagnostics import analyze_yt_dlp_failure
+from src.downloads.youtube_strategy_catalog import build_ytdlp_strategy_plan
 from src.downloads.youtube_success import handle_successful_attempt
 from src.core.subprocess_runner import SubprocessRunnerMixin
 from src.downloads.manager import DownloadManagerMixin
 from src.downloads.files import DownloadFilesMixin
+
+CATALOG_MISS = ('ERROR: [youtube] fixture: Requested format is not available. '
+                'Use --list-formats for a list of available formats')
 
 
 class SyntheticApp(YouTubeDownloaderMixin, YouTubeStrategyMixin):
@@ -31,6 +35,8 @@ class SyntheticApp(YouTubeDownloaderMixin, YouTubeStrategyMixin):
         self.file_logger = Mock()
         self.build_youtube_ejs_args = Mock(return_value=[])
         self.is_youtube_url = Mock(return_value=True)
+        self.youtube_strategy_state_lock = threading.Lock()
+        self.youtube_primary_auth_failure_count = 0
 
 
 def strategy(name, args=(), network=(), **kwargs):
@@ -68,24 +74,27 @@ class QueuePolicyTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn("--force-ipv4", calls[0].args[0])
 
-    def test_chrome_copy_failure_skips_all_chrome_variants_but_not_other_clients(self):
-        plan = [strategy("chrome", ["--cookies-from-browser", "chrome"]),
-                strategy("chrome-any", ["--cookies-from-browser", "chrome"], fallback_format=True),
-                strategy("android", ["--extractor-args", "youtube:player_client=android"])]
-        calls = self.run_queue_video(plan, "Could not copy Chrome cookie database")
-        self.assertEqual(len(calls), 2)
-        calls = self.run_queue_video(plan, "generic transient failure")
-        self.assertEqual(len(calls), 1)
-        self.assertIn("youtube:player_client=android;lang=ru", calls[0].args[0])
+    def test_real_strategy_plan_never_opens_a_browser_cookie_database(self):
+        plan, _, _ = build_ytdlp_strategy_plan(self.app, "https://youtube.com/watch?v=id", "1080p")
+        self.assertFalse(any("--cookies-from-browser" in item["args"] for item in plan))
+        calls = self.run_queue_video(plan, "ERROR: Sign in to confirm you're not a bot")
+        self.assertGreater(len(calls), 1)
+        for call in calls:
+            command = call.args[0]
+            self.assertIn("--no-cookies-from-browser", command)
+            self.assertNotIn("--cookies-from-browser", command)
 
     def test_ios_repeated_missing_formats_across_videos_is_queue_scoped(self):
         ios = strategy("ios", ["--extractor-args", "youtube:player_client=ios"])
+        uncertain_miss = 'WARNING: [youtube] Failed to obtain player JavaScript\n' + CATALOG_MISS
         for index in range(3):
-            self.assertEqual(len(self.run_queue_video([ios], "Requested format is not available", str(index))), 1)
-        self.assertEqual(len(self.run_queue_video([ios], "Requested format is not available", "fourth")), 0)
+            self.assertEqual(len(self.run_queue_video([ios], uncertain_miss, str(index))), 1)
+        for index in range(3):
+            self.assertEqual(len(self.run_queue_video([ios], CATALOG_MISS, str(index))), 1)
+        self.assertEqual(len(self.run_queue_video([ios], CATALOG_MISS, "fourth")), 0)
         from src.downloads.youtube_queue_policy import reset_queue_capabilities
         reset_queue_capabilities(self.app)
-        self.assertEqual(len(self.run_queue_video([ios], "Requested format is not available", "fresh")), 1)
+        self.assertEqual(len(self.run_queue_video([ios], CATALOG_MISS, "fresh")), 1)
 
     def test_manager_resets_capabilities_before_new_batch_and_transient_failure_does_not_ban(self):
         ipv6 = strategy("ipv6", network=["--force-ipv6"])
@@ -94,6 +103,7 @@ class QueuePolicyTests(unittest.TestCase):
         self.app.cleanup_stale_download_temp_files = Mock(return_value=0)
         self.app.cleanup_stale_download_temp_dirs = Mock(return_value=0)
         self.app.convert_videos_to_audio = Mock(return_value=[])
+        self.app.batch_existing_videos = Mock(return_value={})
         self.app.write_problem_session_summary = Mock()
         self.app.download_start_time = None
         self.app.download_threads = []
@@ -108,19 +118,62 @@ class QueuePolicyTests(unittest.TestCase):
         state = QueueCapabilities()
         ios = strategy("ios", ["--extractor-args", "youtube:player_client=ios"])
         with ThreadPoolExecutor(max_workers=3) as pool:
-            list(pool.map(lambda url: state.observe(ios, url, "Requested format is not available"), ["a", "b", "c"]))
+            list(pool.map(lambda url: state.observe(ios, url, CATALOG_MISS, confirmed_catalog_miss=True),
+                          ["a", "b", "c"]))
         self.assertIsNotNone(state.skip_reason(ios))
         self.assertIsNone(state.skip_reason(dict(ios, fallback_format=True)))
         state.observe(ios, "c", success=True)
         self.assertIsNone(state.skip_reason(ios))
 
-    def test_auth_dedup_preserves_different_clients_and_cookie_fallback(self):
+    def test_auth_dedup_preserves_different_clients(self):
         plan = [strategy("default"), strategy("default-ipv4", network=["--force-ipv4"]),
-                strategy("android", ["--extractor-args", "youtube:player_client=android"]),
-                strategy("cookies", ["--cookies-from-browser", "chrome"])]
+                strategy("android", ["--extractor-args", "youtube:player_client=android"])]
         calls = self.run_queue_video(plan, "Войдите в свой аккаунт")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("youtube:player_client=android;lang=ru", calls[1].args[0])
+
+    def test_real_order_reaches_hls_fallback_within_retry_budget(self):
+        for error in (CATALOG_MISS, 'WARNING: [youtube] Could not solve a challenge\n' + CATALOG_MISS):
+            with self.subTest(error=error):
+                def download(command, *_args):
+                    selector = command[command.index('-f') + 1]
+                    if '[protocol^=http]' in selector:
+                        # Verbose command options must not count as a media network error.
+                        output = '[debug] Command-line config: [\'--socket-timeout\', \'15\']\n' + error
+                        return subprocess.CompletedProcess(command, 1, output, '')
+                    return subprocess.CompletedProcess(command, 0, '[DOWNLOAD_PLAN] protocol=m3u8_native', '')
+
+                self.app.run_command = Mock(side_effect=download)
+                published = SimpleNamespace(last_error=None, candidate_path=None, action='success',
+                                            video_path='published.mp4')
+                with patch('src.downloads.youtube_downloader.handle_successful_attempt', return_value=published), \
+                     patch.object(self.app.cancel_flag, 'wait', return_value=False) as delay:
+                    self.assertEqual(self.app.method_yt_dlp('fixture'), 'published.mp4')
+                self.assertLessEqual(self.app.run_command.call_count, 12)
+                delay.assert_not_called()
+
+    def test_clean_miss_without_reserve_skips_only_equivalent_catalog_variants(self):
+        plan = [strategy('initial', network=['--http-chunk-size', '1M'])]
+        plan.extend(strategy(f'transfer-{index}', network=['--http-chunk-size', '2M',
+                             '--concurrent-fragments', '1'], socket_timeout=90, retries=12)
+                    for index in range(15))
+        plan.extend([strategy('other-route', network=['--force-ipv4']),
+                     strategy('actual-fallback', fallback_format=True)])
+        calls = self.run_queue_video(plan, CATALOG_MISS)
         self.assertEqual(len(calls), 3)
-        self.assertTrue(any("--cookies-from-browser" in call.args[0] for call in calls))
+        self.assertIn('--force-ipv4', calls[1].args[0])
+        fallback = calls[2].args[0]
+        self.assertNotIn('[protocol^=http]', fallback[fallback.index('-f') + 1])
+        calls = self.run_queue_video(plan[:1], CATALOG_MISS)
+        self.assertEqual(len(calls), 1)
+
+    def test_network_or_incomplete_catalog_does_not_skip_next_transfer_variant(self):
+        plan = [strategy('first'), strategy('next', network=['--http-chunk-size', '1M'])]
+        for error in ('ERROR: Read timed out',
+                      'WARNING: [youtube] Failed to obtain player JavaScript\n' + CATALOG_MISS):
+            with self.subTest(error=error):
+                calls = self.run_queue_video(plan, error)
+                self.assertEqual(len(calls), 2)
 
     def test_filename_and_download_plan_do_not_suppress_working_auth_scope(self):
         for title in ("Cookies recipe", "Sign in to confirm", "Войдите в свой аккаунт"):
@@ -190,6 +243,79 @@ class QueuePolicyTests(unittest.TestCase):
         self.assertNotIn("[format_id!=136]", commands[2][commands[2].index("-f") + 1])
         self.assertNotIn("bestaudio[format_id!=", commands[1][commands[1].index("-f") + 1])
 
+    def test_verified_reserve_reuses_catalog_miss_but_checks_distinct_client_and_progressive(self):
+        plan = [strategy("first"),
+                strategy("known-miss", ["--extractor-args", "youtube:player_client=ios"],
+                         ["--force-ipv4", "--http-chunk-size", "1M"]),
+                strategy("same-catalog-different-chunks", ["--extractor-args", "youtube:player_client=ios"],
+                         ["--force-ipv4", "--http-chunk-size", "2M"]),
+                strategy("other-network", ["--extractor-args", "youtube:player_client=ios"],
+                         ["--force-ipv6", "--http-chunk-size", "2M"]),
+                strategy("other-client", ["--extractor-args", "youtube:player_client=android"],
+                         progressive_format=True)]
+        self.app.run_command = Mock(side_effect=[subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 1, CATALOG_MISS, ""),
+            subprocess.CompletedProcess([], 1, "", CATALOG_MISS),
+            subprocess.CompletedProcess([], 0, "", "")])
+        reserve_file = self.root / "reserve.mp4"
+        reserve_file.write_bytes(b"fixture reserve")
+        reserve = SimpleNamespace(last_error=None, candidate_path=str(reserve_file),
+                                  candidate_height=720, candidate_width=1280, action="retry",
+                                  verified_candidate_height=720, lower_video_format_id="136")
+        published = SimpleNamespace(last_error=None, candidate_path=None, action="success", video_path="1080.mp4")
+        with patch("src.downloads.youtube_downloader.build_ytdlp_strategy_plan", return_value=(plan, [], "1")), \
+             patch("src.downloads.youtube_downloader.handle_successful_attempt", side_effect=[reserve, published]), \
+             patch("src.downloads.youtube_downloader.finalize_lower_quality_candidate") as finalize, \
+             patch.object(self.app.cancel_flag, "wait", return_value=False) as delay:
+            self.assertEqual(self.app.method_yt_dlp("fixture"), "1080.mp4")
+        finalize.assert_not_called()
+        delay.assert_not_called()
+        commands = [call.args[0] for call in self.app.run_command.call_args_list]
+        self.assertEqual(len(commands), 4)
+        self.assertIn("--force-ipv6", commands[2])
+        self.assertIn("youtube:player_client=android;lang=ru", commands[3])
+        for command in commands[1:]:
+            selector = command[command.index("-f") + 1]
+            self.assertIn("[height>720]", selector)
+            self.assertNotIn("[format_id!=136]", selector)
+        self.assertEqual(self.app.youtube_queue_capabilities.ios_failed_videos, {})
+
+    def test_uncertain_catalog_retries_use_failure_budget_without_disabling_ios(self):
+        plan = [strategy('first')] + [strategy(f'ios-{index}', ['--extractor-args', 'youtube:player_client=ios'])
+                                     for index in range(25)]
+        error = 'WARNING: [youtube] Failed to obtain player JavaScript\n' + CATALOG_MISS
+        self.app.run_command = Mock(side_effect=[subprocess.CompletedProcess([], 0, '', '')]
+                                  + [subprocess.CompletedProcess([], 1, error, '')] * 25)
+        reserve_file = self.root / 'reserve.mp4'
+        reserve_file.write_bytes(b'fixture reserve')
+        reserve = SimpleNamespace(last_error=None, candidate_path=str(reserve_file), candidate_height=720,
+                                  candidate_width=1280, action='retry', verified_candidate_height=720)
+        with patch('src.downloads.youtube_downloader.build_ytdlp_strategy_plan', return_value=(plan, [], '1')), \
+             patch('src.downloads.youtube_downloader.handle_successful_attempt', return_value=reserve), \
+             patch('src.downloads.youtube_downloader.finalize_lower_quality_candidate', return_value=str(reserve_file)), \
+             patch.object(self.app.cancel_flag, 'wait', return_value=False):
+            self.assertEqual(self.app.method_yt_dlp('fixture'), str(reserve_file))
+        ops = [call.args[2] for call in self.app.record_problem.call_args_list]
+        self.assertEqual(self.app.run_command.call_count, 13)
+        self.assertIn('yt_dlp_retry_budget_exhausted', ops)
+        self.assertNotIn('yt_dlp_quality_catalog_no_upgrade', ops)
+        self.assertEqual(self.app.youtube_queue_capabilities.ios_failed_videos, {})
+
+    def test_confirmed_any_protocol_miss_also_covers_same_catalog_progressive(self):
+        plan = [strategy('original'), strategy('any', fallback_format=True),
+                strategy('narrower', progressive_format=True)]
+        self.app.run_command = Mock(side_effect=[subprocess.CompletedProcess([], 0, '', ''),
+                                                 subprocess.CompletedProcess([], 1, CATALOG_MISS, '')])
+        reserve_file = self.root / 'reserve.mp4'
+        reserve_file.write_bytes(b'fixture reserve')
+        reserve = SimpleNamespace(last_error=None, candidate_path=str(reserve_file), candidate_height=720,
+                                  candidate_width=1280, action='retry', verified_candidate_height=720)
+        with patch('src.downloads.youtube_downloader.build_ytdlp_strategy_plan', return_value=(plan, [], '1')), \
+             patch('src.downloads.youtube_downloader.handle_successful_attempt', return_value=reserve), \
+             patch('src.downloads.youtube_downloader.finalize_lower_quality_candidate', return_value=str(reserve_file)):
+            self.assertEqual(self.app.method_yt_dlp('fixture'), str(reserve_file))
+        self.assertEqual(self.app.run_command.call_count, 2)
+
     def test_timeout_message_uses_effective_watchdog_timeout(self):
         self.app.run_command = Mock(side_effect=subprocess.TimeoutExpired(["yt-dlp"], 240))
         with patch("src.downloads.youtube_downloader.build_ytdlp_strategy_plan", return_value=([strategy("one")], [], "1")):
@@ -244,7 +370,7 @@ class FailureAndQualityPolicyTests(unittest.TestCase):
         app._utf8_subprocess_env = Mock(return_value={})
         app._command_to_string = Mock(return_value="synthetic")
         child = SimpleNamespace(pid=42, stdout=iter([]), poll=lambda: None)
-        with patch("src.core.subprocess_runner.subprocess.Popen", return_value=child), \
+        with patch("src.core.subprocess_runner.launch_owned_process", return_value=child), \
              patch("src.core.subprocess_runner.time.time", side_effect=[0, 240]):
             with self.assertRaises(subprocess.TimeoutExpired) as raised:
                 SubprocessRunnerMixin.run_command_streamed(app, ["synthetic"], 3600, "yt_dlp_download")

@@ -13,10 +13,6 @@ from src.core.app_updates import (
 
 
 class UpdateControlsMixin:
-    def _save_auto_update_preference(self):
-        self.settings["auto_check_updates"] = bool(self.auto_check_updates_var.get())
-        self.save_settings()
-
     def _update_worker(self, task, finished):
         """Poll a queue on the Tk thread instead of calling Tk from a worker."""
         if getattr(self, "_updater_busy", False):

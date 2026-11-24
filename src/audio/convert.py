@@ -16,6 +16,7 @@ from src.core.session_settings import session_setting
 
 class AudioConvertMixin:
     def convert_videos_to_audio(self, video_paths: List[str], audio_dir: Path) -> List[str]:
+        dashboard = getattr(self, "_dashboard_session", None)
         video_files: List[Path] = []
         seen: Set[Path] = set()
         for video_path in video_paths:
@@ -43,28 +44,13 @@ class AudioConvertMixin:
             if self.cancel_flag.is_set():
                 self.log("🛑 Конвертация отменена", "WARNING")
                 break
-
+            if dashboard is not None:
+                dashboard.audio(video_file, "audio")
             audio_dir.mkdir(parents=True, exist_ok=True)
             # Equal names/durations do not establish that an MP3 belongs to this video.
             audio_file = self.make_unique_media_path(audio_dir / f"{video_file.stem}.mp3")
 
             source_duration = self.get_media_duration(str(video_file))
-            if not self.has_audio_stream(str(video_file)):
-                reason = "в исходном видео нет аудиодорожки"
-                self.log(f"[{idx}/{len(video_files)}] ❌ {reason}: {video_file.name}", "ERROR")
-                failed_conversions.append({
-                    "video_file": str(video_file),
-                    "audio_file": str(audio_file),
-                    "reason": reason,
-                    "source_duration": source_duration,
-                })
-                self.record_problem(
-                    "Конвертация невозможна: в видео нет аудиодорожки",
-                    "ERROR", "convert_video_to_audio_no_stream",
-                    failed_conversions[-1]
-                )
-                continue
-
             self.log(
                 f"[{idx}/{len(video_files)}] 🔄 {video_file.name} "
                 f"(длительность видео: {self.format_duration(source_duration)})",
@@ -76,7 +62,9 @@ class AudioConvertMixin:
 
             audio_filter = "aresample=async=1:first_pts=0"
             cmd = [
-                "ffmpeg", "-nostdin", "-y", "-i", str(video_file),
+                "ffmpeg", "-nostdin", "-y", "-v", "error", "-xerror",
+                "-err_detect", "explode", "-abort_on", "empty_output_stream",
+                "-i", str(video_file),
                 "-map", "0:a:0", "-vn",
             ]
             if source_duration > 0:
@@ -91,7 +79,37 @@ class AudioConvertMixin:
                 cmd.extend(["-b:a", audio_quality_setting])
             cmd.extend(["-ar", "48000", "-ac", "2", str(temp_audio_file)])
 
+            converted_before = len(converted)
             try:
+                if not self.validate_video_packets(video_file):
+                    reason = "FFmpeg не смог полностью прочитать исходное видео и аудио"
+                    self.log(f"[{idx}/{len(video_files)}] ❌ {video_file.name}: {reason}", "ERROR")
+                    failed_conversions.append({
+                        "video_file": str(video_file),
+                        "audio_file": str(audio_file),
+                        "reason": reason,
+                        "source_duration": source_duration,
+                        "invalid_video": True,
+                    })
+                    continue
+                if not self.has_audio_stream(str(video_file)):
+                    reason = "аудиодорожка не обнаружена"
+                    self.log(f"[{idx}/{len(video_files)}] ❌ {reason}: {video_file.name}", "ERROR")
+                    failed_conversions.append({
+                        "video_file": str(video_file),
+                        "audio_file": str(audio_file),
+                        "reason": reason,
+                        "source_duration": source_duration,
+                    })
+                    self.record_problem(
+                        "Конвертация невозможна: аудиодорожка не обнаружена",
+                        "ERROR", "convert_video_to_audio_no_stream", failed_conversions[-1],
+                    )
+                    continue
+                saved = self.existing_batch_audio(video_file, audio_dir)
+                if saved:
+                    converted.append(saved)
+                    continue
                 r = self.run_command(
                     cmd, CONVERT_TIMEOUT_SEC, "convert_video_to_audio",
                     {
@@ -103,12 +121,19 @@ class AudioConvertMixin:
                         "duration_tolerance_sec": AUDIO_DURATION_TOLERANCE_SEC,
                     }
                 )
+                # Demuxers can report a read error and still return zero after
+                # apad fills the remaining timeline. At loglevel error, stderr
+                # must be empty before we can accept a padded MP3.
+                ffmpeg_error = r.returncode != 0 or bool((r.stderr or "").strip())
                 ok, reason, src_dur, out_dur = self.validate_converted_audio(
-                    video_file, temp_audio_file
+                    video_file, temp_audio_file, source_duration=source_duration
                 )
-                if r.returncode == 0 and ok:
+                if ffmpeg_error:
+                    reason = "FFmpeg сообщил об ошибке чтения или конвертации аудио"
+                if not ffmpeg_error and ok:
                     with self.file_lock:
                         audio_file = self.make_unique_media_path(audio_file)
+                        self.prepare_media_receipt("audio_files", video_file.name, temp_audio_file, audio_file)
                         temp_audio_file.rename(audio_file)
                     sz  = audio_file.stat().st_size / (1024 * 1024)
                     self.log(
@@ -197,6 +222,11 @@ class AudioConvertMixin:
                     "ERROR", "convert_video_to_audio_exception",
                     failed_conversions[-1], e
                 )
+            finally:
+                if dashboard is not None:
+                    status = ("done" if len(converted) > converted_before else
+                              "video" if self.cancel_flag.is_set() else "audio_error")
+                    dashboard.audio(video_file, status)
 
         if self.cancel_flag.is_set():
             self.log(
@@ -210,13 +240,13 @@ class AudioConvertMixin:
                 "ERROR"
             )
             for item in failed_conversions:
-                original_video = str(item.get("video_file", "") or "")
-                if not original_video:
+                original_video = item["video_file"]
+                item["original_video_file"] = original_video
+                if not item.get("invalid_video"):
                     continue
                 manual_video = self.move_video_to_manual_processing(
                     original_video, str(item.get("reason", "conversion_failed"))
                 )
-                item["original_video_file"] = original_video
                 item["video_file"] = manual_video
                 if manual_video != original_video:
                     item["manual_processing_video"] = manual_video
@@ -225,9 +255,8 @@ class AudioConvertMixin:
             failed_location = (failed_conversion_file.name if failed_conversion_file
                                else "Обработать вручную")
             self.log(
-                f"⚠️ Некоторые видео не удалось конвертировать в аудио. "
-                f"Исходные видео и файл сессии помещены в «Обработать вручную»: "
-                f"{failed_location}",
+                f"⚠️ Часть MP3 не создана. Проверенные видео сохранены в исходной папке. "
+                f"Подробности в «Обработать вручную»: {failed_location}",
                 "WARNING"
             )
             self.log(

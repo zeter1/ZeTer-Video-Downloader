@@ -26,6 +26,8 @@ class AudioPipelineFailures(unittest.TestCase):
         app.split_hours = SimpleNamespace(get=lambda: 0)
         app.get_audio_duration = Mock(return_value=2.)
         app.get_total_audio_duration = Mock(return_value=2.)
+        app.get_decoded_audio_duration = Mock(return_value=2.)
+        app.get_audio_sample_rate = Mock(return_value=48000)
         app.format_duration = str
         app.run_command = Mock(return_value=subprocess.CompletedProcess([],1,'','failure'))
 
@@ -33,19 +35,27 @@ class AudioPipelineFailures(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.app.merge_audio_files([str(self.source)],str(self.root),'output')
         self.assertTrue(self.source.exists())
+        command = self.app.run_command.call_args.args[0]
+        self.assertEqual(command[command.index('-protocol_whitelist') + 1], 'file')
+        playlist = Path(command[command.index('-i') + 1])
+        input_path = self.source.as_posix().replace("'", r"'\''")
+        self.assertEqual(playlist.read_text(encoding='utf-8').splitlines(),
+                         ['ffconcat version 1.0', f"file '{input_path}'"])
+        self.assertEqual(list(playlist.parent.iterdir()), [playlist])
 
     def test_split_failure_preserves_source_and_old_files(self):
         old=self.root/'part_000.mp3'
         old.write_bytes(b'old')
         with self.assertRaises(RuntimeError):
-            self.app.split_audio_file(self.source,self.root,'output',1)
+            self.app.split_audio_file(self.source,self.root,'output',1/3600)
         self.assertEqual(self.source.read_bytes(),b'a'*2000)
         self.assertEqual(old.read_bytes(),b'old')
 
     def test_zero_exit_without_parts_is_failure(self):
         self.app.run_command.return_value.returncode=0
+        self.app.run_command.return_value.stderr=''
         with self.assertRaises(RuntimeError):
-            self.app.split_audio_file(self.source,self.root,'output',1)
+            self.app.split_audio_file(self.source,self.root,'output',1/3600)
         self.assertTrue(self.source.exists())
 
     def test_merge_rejects_missing_input(self):
@@ -57,6 +67,53 @@ class AudioPipelineFailures(unittest.TestCase):
         self.app.run_command.side_effect=CommandCancelledError('cancelled')
         with self.assertRaises(CommandCancelledError):
             self.app.merge_audio_files([str(self.source)],str(self.root),'output')
+
+    def test_cancel_during_merge_receipt_preserves_unpublished_mp3(self):
+        app = self.app
+        inputs = [str(self.source)]
+
+        def run(cmd, *_):
+            Path(cmd[-1]).write_bytes(b'complete merged audio')
+            return subprocess.CompletedProcess(cmd, 0, '', '')
+
+        def cancel_during_receipt(audio_files, publications):
+            self.assertEqual(audio_files, inputs)
+            self.assertEqual(len(publications), 1)
+            app.cancel_flag.set()
+
+        app.run_command.side_effect = run
+        app.prepare_batch_merge_receipt = Mock(side_effect=cancel_during_receipt)
+        with self.assertRaises(CommandCancelledError):
+            app.merge_audio_files(inputs, str(self.root), 'output')
+        output_dir = self.root / 'Разбивка аудио'
+        staged, = output_dir.glob('.merge_*/merged.mp3')
+        self.assertEqual(staged.read_bytes(), b'complete merged audio')
+        self.assertEqual(self.source.read_bytes(), b'a' * 2000)
+        self.assertFalse(list(output_dir.glob('output_*.mp3')))
+
+    def test_cancel_during_split_receipt_preserves_every_staged_part(self):
+        app = self.app
+        inputs = [str(self.source)]
+        app.get_decoded_audio_duration.side_effect = lambda p: 2. if p == self.source else 1.
+
+        def run(cmd, *_):
+            for part in ('part_000.mp3', 'part_001.mp3'):
+                Path(cmd[-1]).with_name(part).write_bytes(part.encode('ascii'))
+            return subprocess.CompletedProcess(cmd, 0, '', '')
+
+        def cancel_during_receipt(audio_files, publications):
+            self.assertEqual(audio_files, inputs)
+            self.assertEqual(len(publications), 2)
+            app.cancel_flag.set()
+
+        app.run_command.side_effect = run
+        app.prepare_batch_merge_receipt = Mock(side_effect=cancel_during_receipt)
+        with self.assertRaises(CommandCancelledError):
+            app.split_audio_file(self.source, self.root, 'output', 1 / 3600, audio_files=inputs)
+        staged = sorted(self.root.glob('.split_*/part_*.mp3'))
+        self.assertEqual([part.read_bytes() for part in staged], [b'part_000.mp3', b'part_001.mp3'])
+        self.assertEqual(self.source.read_bytes(), b'a' * 2000)
+        self.assertFalse(list(self.root.glob('output_*.mp3')))
 
     def test_merge_duration_mismatch_is_failure(self):
         def run(cmd,*args):
@@ -87,6 +144,7 @@ class AudioPipelineFailures(unittest.TestCase):
         old.write_bytes(b'unrelated audio')
         self.app.get_media_duration=Mock(return_value=2.)
         self.app.has_audio_stream=Mock(return_value=True)
+        self.app.validate_video_packets=Mock(return_value=True)
         self.app.validate_converted_audio=Mock(return_value=(True,'ok',2.,2.))
         def run(cmd,*args):
             Path(cmd[-1]).write_bytes(b'new audio')
@@ -98,11 +156,10 @@ class AudioPipelineFailures(unittest.TestCase):
 
     def test_second_part_publish_failure_then_retry_has_one_set(self):
         from unittest.mock import patch
-        self.app.get_audio_duration.side_effect=lambda p: 2. if Path(p)==self.source else 1.
+        self.app.get_decoded_audio_duration.side_effect=lambda p: 2. if p==self.source else 1.
         def run(cmd,*args):
-            pattern=cmd[-1]
-            for i in range(2):
-                Path(pattern % i).write_bytes(b'part'*500)
+            for part in ('part_000.mp3', 'part_001.mp3'):
+                Path(cmd[-1]).with_name(part).write_bytes(b'part'*500)
             return subprocess.CompletedProcess(cmd,0,'','')
         self.app.run_command.side_effect=run
         rename=Path.rename
@@ -132,7 +189,7 @@ class AudioPipelineFailures(unittest.TestCase):
         app.run_command=lambda cmd,timeout,*args: subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
         inputs=[]
         for i,freq in enumerate((440,880)):
-            path=self.root/f'тон {i}.mp3'
+            path=self.root/f"тон '{i}.mp3"
             subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i',
                             f'sine=frequency={freq}:sample_rate=48000','-t','1',
                             '-c:a','libmp3lame','-b:a','320k',str(path)],check=True,timeout=20)
@@ -156,3 +213,108 @@ class AudioPipelineFailures(unittest.TestCase):
         self.assertAlmostEqual(frequency(merged,1.2),880,delta=12)
         self.assertAlmostEqual(frequency(parts[0],.2),440,delta=12)
         self.assertAlmostEqual(frequency(parts[1],.2),880,delta=12)
+
+    def test_mp3_split_preserves_decoded_samples_at_cut(self):
+        import array
+        import shutil
+        if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+            self.skipTest('FFmpeg and ffprobe required')
+        app = self.app
+        del app.get_audio_duration
+        del app.get_decoded_audio_duration
+        del app.get_audio_sample_rate
+        app.subprocess_flags = 0
+        app.run_command = lambda cmd, timeout, *_: subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout)
+        source = self.root / 'пример.mp3'
+        subprocess.run([
+            'ffmpeg', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i',
+            r'aevalsrc=if(lt(t\,1)\,0.4*sin(2*PI*440*t)\,0.4*sin(2*PI*880*t)):s=48000:d=1.381',
+            '-c:a', 'libmp3lame', '-b:a', '320k', str(source),
+        ], check=True, timeout=20)
+
+        def samples(path):
+            raw = subprocess.check_output([
+                'ffmpeg', '-nostdin', '-v', 'error', '-xerror', '-i', str(path),
+                '-map', '0:a:0', '-f', 's16le', '-ac', '1', 'pipe:1',
+            ], timeout=20)
+            return array.array('h', raw)
+
+        original = source.read_bytes()
+        expected = samples(source)
+        app.split_audio_file(source, self.root, 'готово', 1 / 3600)
+        parts = sorted(self.root.glob('готово_Часть_*.mp3'))
+        self.assertEqual(len(parts), 2)
+        first, second = map(samples, parts)
+        self.assertEqual(len(first), 48000)
+        self.assertEqual(len(first) + len(second), len(expected))
+        self.assertEqual(source.read_bytes(), original)
+        for actual, reference in ((first[-4096:], expected[43904:48000]),
+                                  (second[:4096], expected[48000:52096])):
+            error = sum(abs(a - b) for a, b in zip(actual, reference)) / 4096
+            self.assertLess(error, 500)
+
+    def test_mp3_split_bounds_windows_command_for_long_output_paths(self):
+        split_dir = self.root / ('д' * max(10, 205 - len(str(self.root))))
+        self.app.get_decoded_audio_duration.side_effect = lambda p: 100 * 3600 if p == self.source else 3600.
+        commands = []
+
+        def run(cmd, *_):
+            commands.append(cmd)
+            for path in cmd:
+                if Path(path).name.startswith('part_') and path.endswith('.mp3'):
+                    Path(path).write_bytes(b'part')
+            return subprocess.CompletedProcess(cmd, 0, '', '')
+
+        self.app.run_command.side_effect = run
+        self.app.split_audio_file(self.source, split_dir, 'итог', 1)
+        single_command = []
+        for command in commands:
+            single_command.extend(command[command.index('-abort_on') + 2:])
+            self.assertLess(len(subprocess.list2cmdline(command).encode('utf-16-le')) // 2 + 1, 32767)
+        self.assertGreater(
+            len(subprocess.list2cmdline(single_command))
+            + sum(len(command[command.index('-filter_complex') + 1]) for command in commands), 32767,
+        )
+        self.assertGreater(len(commands), 1)
+        self.assertEqual(len(list(split_dir.glob('итог_Часть_*.mp3'))), 100)
+
+    def test_real_split_preserves_samples_between_encoder_batches(self):
+        import array
+        import shutil
+        if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+            self.skipTest('FFmpeg and ffprobe required')
+        app = self.app
+        del app.get_decoded_audio_duration
+        del app.get_audio_sample_rate
+        app.subprocess_flags = 0
+        app.audio_quality = SimpleNamespace(get=lambda: 'VBR-0 (лучшее)')
+        operations = []
+
+        def run(cmd, timeout, operation, _):
+            operations.append(operation)
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+        app.run_command = run
+        source = self.root / 'много частей.mp3'
+        subprocess.run([
+            'ffmpeg', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i',
+            r'aevalsrc=if(lt(t\,1.92)\,0.4*sin(2*PI*440*t)\,0.4*sin(2*PI*880*t)):s=48000:d=2.08',
+            '-c:a', 'libmp3lame', '-q:a', '0', str(source),
+        ], check=True, timeout=20)
+        app.split_audio_file(source, self.root, 'готово', 0.12 / 3600)
+        parts = sorted(self.root.glob('готово_Часть_*.mp3'))
+        self.assertEqual(operations.count('split_audio_file'), 2)
+        self.assertEqual(len(parts), 17)
+
+        def samples(path):
+            return array.array('h', subprocess.check_output([
+                'ffmpeg', '-nostdin', '-v', 'error', '-xerror', '-i', str(path),
+                '-map', '0:a:0', '-f', 's16le', 'pipe:1',
+            ], timeout=20))
+
+        cut = 92160
+        expected = samples(source)[cut - 4096:cut + 4096]
+        actual = samples(parts[15])[-4096:] + samples(parts[16])[:4096]
+        self.assertEqual(len(actual), len(expected))
+        self.assertLess(sum(abs(a - b) for a, b in zip(actual, expected)) / len(expected), 500)

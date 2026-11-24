@@ -8,7 +8,17 @@ from typing import Tuple
 from datetime import datetime
 import json
 
-from src.core.constants import MAX_CONCURRENT_DL, MAX_SPLIT_HOURS
+from src.core.constants import AUDIO_QUALITIES, DEFAULT_AUDIO_QUALITY, MAX_CONCURRENT_DL, MAX_SPLIT_HOURS
+
+
+def normalize_audio_quality(value):
+    if isinstance(value, str):
+        value = value.strip()
+        if value.isdecimal():
+            value += "k"
+        if value in AUDIO_QUALITIES:
+            return value
+    return DEFAULT_AUDIO_QUALITY
 
 
 class SettingsMixin:
@@ -73,9 +83,10 @@ class SettingsMixin:
         default_settings = {
             "save_path": str(Path.home() / "Downloads"),
             "quality": "1080p",
-            "audio_quality": "320k",
+            "audio_quality": DEFAULT_AUDIO_QUALITY,
             "concurrent_downloads": 2,
             "download_subtitles": False,
+            "skip_downloaded": True,
             "write_problem_logs": True,
             "auto_check_updates": True,
             "proxy_enabled": False,
@@ -106,6 +117,8 @@ class SettingsMixin:
         )
         # Качество видео больше не выбирается пользователем: всегда авто до 1080p.
         self.settings["quality"] = "1080p"
+        self.settings["skip_downloaded"] = self.settings["skip_downloaded"] is not False
+        self.settings["audio_quality"] = normalize_audio_quality(self.settings["audio_quality"])
         self.settings["proxy_enabled"] = bool(self.settings.get("proxy_enabled", False))
         self.settings["proxy_url"] = str(self.settings.get("proxy_url", "") or "").strip()
         self.settings["write_problem_logs"] = bool(
@@ -120,8 +133,6 @@ class SettingsMixin:
 
     def save_settings(self) -> None:
         try:
-            self.settings_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, ensure_ascii=False, indent=2)
+            self._atomic_write_json_file(self.settings_file, self.settings)
         except Exception as e:
             self.log(f"Ошибка сохранения настроек: {str(e)}", "ERROR")

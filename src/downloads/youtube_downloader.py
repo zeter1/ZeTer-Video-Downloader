@@ -3,13 +3,14 @@
 Автоматически выделено из прежнего модуля video_download.py без изменения тел методов.
 """
 
+from pathlib import Path
 from typing import Dict, List, Optional
-import shutil
 import subprocess
 import time
 import traceback
 
 from src.core.constants import DOWNLOAD_TIMEOUT_SEC, YT_DLP_NETWORK_RETRY_PAUSE_SEC
+from src.core.download_temp import plain_download_path
 from src.core.errors import CommandCancelledError, ProblematicDownloadSkipped
 from src.downloads.youtube_attempt import build_attempt_context, log_first_attempt, prepare_download_setup
 from src.downloads.youtube_command import build_ytdlp_download_command
@@ -17,17 +18,18 @@ from src.downloads.youtube_failure_reporting import report_failed_attempt
 from src.downloads.youtube_finalize import (
     finalize_lower_quality_candidate, record_all_strategies_failed,
 )
-from src.downloads.youtube_success import handle_successful_attempt
+from src.downloads.youtube_success import discard_quality_candidate, handle_successful_attempt
 from src.downloads.youtube_recovery import (
     handle_postprocessing_failure, record_orchestration_exception,
 )
 from src.downloads.youtube_retry import (
-    cookie_read_failed, has_auth_error, has_critical_error, has_youtube_retry_error,
+    has_auth_error, has_critical_error, has_youtube_retry_error,
 )
 from src.downloads.youtube_strategy_catalog import build_ytdlp_strategy_plan
 from src.downloads.youtube_queue_policy import RetryBudget, auth_scope, queue_capabilities
 from src.downloads.youtube_candidate_formats import (
-    exclude_downloaded_lower_formats, selection_scope,
+    exclude_downloaded_lower_formats, quality_catalog_miss, quality_catalog_scope,
+    require_better_video, selection_scope,
 )
 
 
@@ -47,6 +49,7 @@ class YouTubeDownloaderMixin:
         best_lower_candidate_path: Optional[str] = None
         best_lower_candidate_height = -1
         best_lower_candidate_width = -1
+        verified_reserve_height = None
         force_progressive_fallback = False
         skip_risky_any_formats = False
         postprocessing_failure_count = 0
@@ -62,6 +65,7 @@ class YouTubeDownloaderMixin:
         auth_rejected_scopes = set()
         retry_budget = RetryBudget()
         downloaded_lower_formats = {}
+        catalog_misses = {}
         for attempt, strategy in enumerate(strategies, 1):
             if success_video or self.cancel_flag.is_set():
                 break
@@ -90,10 +94,16 @@ class YouTubeDownloaderMixin:
                 continue
             if skip_risky_any_formats and strategy.get('fallback_format'):
                 continue
-            # Все high-quality варианты уже были пройдены. Если у нас есть
-            # проверенный резерв ниже 1080p, повторно качать progressive 720/360
-            # нет смысла — используем лучший уже найденный файл.
-            if best_lower_candidate_path and strategy.get('progressive_format'):
+            if (verified_reserve_height is not None and best_lower_candidate_path
+                    and not plain_download_path(Path(best_lower_candidate_path))):
+                verified_reserve_height = None
+                best_lower_candidate_path = None
+                best_lower_candidate_height = best_lower_candidate_width = -1
+                downloaded_lower_formats.clear()
+                catalog_misses.clear()
+            # A reserve without measured dimensions keeps the prior fallback behaviour.
+            if (best_lower_candidate_path and verified_reserve_height is None
+                    and strategy.get('progressive_format')):
                 break
             (
                 cmd_v,
@@ -105,7 +115,23 @@ class YouTubeDownloaderMixin:
                 self, url, strategy, default_network_args, download_temp_dir, proxy_args
             )
             scope = selection_scope(strategy)
-            cmd_v = exclude_downloaded_lower_formats(cmd_v, downloaded_lower_formats.get(scope))
+            lower_format_ids = downloaded_lower_formats.get(scope) if verified_reserve_height is None else None
+            catalog_key, profile = quality_catalog_scope(
+                strategy, default_network_args, ejs_args, verified_reserve_height, lower_format_ids)
+            known = catalog_misses.get(catalog_key, ())
+            # Under the same filters, any-protocol includes both narrower profiles.
+            if profile in known or "any" in known:
+                self.record_problem(
+                    "Пропущён повторный запрос к уже проверенному каталогу", "INFO",
+                    "yt_dlp_quality_catalog_reused",
+                    {"url": url, "strategy": strategy["name"], "saved_height": verified_reserve_height},
+                    resolved=True,
+                )
+                continue
+            if verified_reserve_height is None:
+                cmd_v = exclude_downloaded_lower_formats(cmd_v, lower_format_ids)
+            else:
+                cmd_v = require_better_video(cmd_v, verified_reserve_height)
             if attempt > 1:
                 self.log(f"🔄 Попытка {attempt}/{len(strategies)}: {strategy['name']}", "INFO")
             attempt_started = time.monotonic()
@@ -154,6 +180,8 @@ class YouTubeDownloaderMixin:
                     if getattr(decision, "semantic_failure", False):
                         retry_budget.failed(attempt_elapsed)
                     if decision.candidate_path is not None:
+                        if decision.candidate_path != best_lower_candidate_path:
+                            verified_reserve_height = getattr(decision, "verified_candidate_height", None)
                         best_lower_candidate_path = decision.candidate_path
                         best_lower_candidate_height = decision.candidate_height
                         best_lower_candidate_width = decision.candidate_width
@@ -169,6 +197,18 @@ class YouTubeDownloaderMixin:
                         break
                     continue
                 else:
+                    _, confirmed_catalog_miss = quality_catalog_miss(res_v)
+                    if confirmed_catalog_miss:
+                        catalog_misses.setdefault(catalog_key, set()).add(profile)
+                        if verified_reserve_height is not None:
+                            self.record_problem(
+                                "В каталоге нет формата лучше сохранённого резерва", "INFO",
+                                "yt_dlp_quality_catalog_no_upgrade",
+                                {"url": url, "strategy": strategy["name"],
+                                 "saved_height": verified_reserve_height},
+                                resolved=True,
+                            )
+                            continue
                     retry_budget.failed(attempt_elapsed)
                     failure = report_failed_attempt(
                         self, url=url, attempt=attempt, strategy=strategy, command=cmd_v,
@@ -186,7 +226,12 @@ class YouTubeDownloaderMixin:
                     slow_network_failure_count = failure.slow_network_failure_count
                     is_network_error = failure.is_network_error
                     failure_analysis = failure.failure_analysis
-                    capabilities.observe(strategy, url, last_error)
+                    capabilities.observe(
+                        strategy, url, last_error,
+                        confirmed_catalog_miss=confirmed_catalog_miss and not lower_format_ids,
+                    )
+                    if confirmed_catalog_miss:
+                        continue
 
                     if failure_analysis.get("stage") == "postprocessing_merge":
                         (
@@ -208,28 +253,16 @@ class YouTubeDownloaderMixin:
                     if has_auth_error(stderr_lower):
                         auth_rejected_scopes.add(auth_scope(strategy))
                         if attempt < len(strategies):
-                            cookie_strategy_used = any(
-                                arg in cmd_v for arg in (
-                                    "--cookies-from-browser", "--cookies"
-                                )
+                            self.log(
+                                "🔐 YouTube запросил авторизацию или проверку «не робот»; "
+                                "пробую другую стратегию...",
+                                "WARNING"
                             )
-                            if cookie_strategy_used and cookie_read_failed(stderr_lower):
-                                self.log(
-                                    "🔐 Не удалось прочитать cookies браузера; "
-                                    "пробую следующую стратегию...",
-                                    "WARNING"
-                                )
-                            else:
-                                self.log(
-                                    "🔐 YouTube запросил авторизацию или проверку «не робот»; "
-                                    "пробую другую стратегию...",
-                                    "WARNING"
-                                )
                             if self.cancel_flag.is_set():
                                 break
                             continue
                         self.log(
-                            "❌ Не удалось скачать: нужна авторизация или cookies браузера",
+                            "❌ Не удалось скачать: YouTube потребовал авторизацию",
                             "ERROR"
                         )
                         break
@@ -346,14 +379,6 @@ class YouTubeDownloaderMixin:
                 # Это не ошибка всей программы: ролик слишком медленный на текущем VPN/CDN.
                 # Прекращаем перебор стратегий для него и отдаём в download_single_video,
                 # чтобы ссылка попала в отдельный txt внутри «Обработать вручную».
-                self.cleanup_download_temp_files(
-                    download_temp_dir, expected_video_id=expected_video_id,
-                    final_video_path=None, reason="problematic_slow_download_skip"
-                )
-                try:
-                    shutil.rmtree(download_temp_dir, ignore_errors=True)
-                except Exception:
-                    pass
                 raise
             except CommandCancelledError:
                 self.log("🛑 Загрузка остановлена пользователем", "WARNING")
@@ -409,20 +434,13 @@ class YouTubeDownloaderMixin:
             if fallback_path:
                 video_path = fallback_path
                 success_video = True
-                shutil.rmtree(quality_candidate_dir, ignore_errors=True)
+                self.cleanup_download_temp_files(
+                    download_temp_dir, expected_video_id=expected_video_id,
+                    final_video_path=video_path, reason="download_success_temp_dir",
+                )
+                discard_quality_candidate(self, quality_candidate_dir, best_lower_candidate_path)
 
         if not success_video and not self.cancel_flag.is_set():
-            self.cleanup_download_temp_files(
-                download_temp_dir, expected_video_id=expected_video_id,
-                final_video_path=None, reason="download_failed_all_strategies"
-            )
-            try:
-                # Failed publication leaves the only valid recovery copy here.
-                for directory in (download_temp_dir, quality_candidate_dir):
-                    if not (directory / '.preserve_download').exists():
-                        shutil.rmtree(directory, ignore_errors=True)
-            except Exception:
-                pass
             record_all_strategies_failed(
                 self, url=url, quality=quality, expected_video_id=expected_video_id,
                 last_error=last_error, strategy_count=len(strategies),

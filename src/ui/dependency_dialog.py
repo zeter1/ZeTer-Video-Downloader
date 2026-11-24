@@ -11,6 +11,12 @@ from tkinter import ttk
 import webbrowser
 
 
+_FFPROBE_INSTALL_HELP = (
+    "Установите сборку FFmpeg с ffprobe.exe и добавьте папку bin, "
+    "где лежат ffmpeg.exe и ffprobe.exe, в PATH. После изменения PATH перезапустите программу."
+)
+
+
 class DependencyDialogMixin:
     def show_dependency_warning(self) -> None:
         optional_missing = getattr(self, "optional_missing_deps", [])
@@ -28,6 +34,8 @@ class DependencyDialogMixin:
             self.log("⚠️ yt-dlp не установлен", "WARNING")
         if "ffmpeg" in self.missing_deps:
             self.log("⚠️ ffmpeg не установлен", "WARNING")
+        if "ffprobe" in self.missing_deps:
+            self.log(f"⚠️ ffprobe недоступен. {_FFPROBE_INSTALL_HELP}", "WARNING")
         self.log(
             "📄 Ручная обработка: Обработать вручную — ссылки на несостоявшиеся загрузки "
             "и видео с ошибками конвертации",
@@ -70,7 +78,7 @@ class DependencyDialogMixin:
                 btn_frame, text="Сайт Node.js",
                 command=lambda: webbrowser.open("https://nodejs.org/")
             ).pack(side=tk.LEFT, padx=5)
-        if "ffmpeg" in self.missing_deps:
+        if {"ffmpeg", "ffprobe"}.intersection(self.missing_deps):
             ttk.Button(
                 btn_frame, text="Сайт FFmpeg",
                 command=lambda: webbrowser.open("https://ffmpeg.org/download.html")
@@ -111,10 +119,10 @@ class DependencyDialogMixin:
                 "Рекомендовано, но не обязательно:\n• " + "\n• ".join(optional_missing)
             )
         else:
-            messagebox.showwarning(
-                "Внимание",
-                "Ещё отсутствуют:\n• " + "\n• ".join(self.missing_deps)
-            )
+            warning = "Ещё отсутствуют:\n• " + "\n• ".join(self.missing_deps)
+            if "ffprobe" in self.missing_deps:
+                warning += "\n\n" + _FFPROBE_INSTALL_HELP
+            messagebox.showwarning("Внимание", warning)
 
 
     def auto_install_packages(self) -> None:

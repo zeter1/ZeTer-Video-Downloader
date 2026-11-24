@@ -1,10 +1,7 @@
-"""Одна задача скачивания и её worker-wrapper.
-
-Автоматически выделено из прежнего модуля download_workflow.py без изменения тел методов.
-"""
+"""Одна задача скачивания и её worker-wrapper."""
 
 from pathlib import Path
-import random
+from time import monotonic
 import threading
 import traceback
 
@@ -13,12 +10,35 @@ from src.core.constants import LOG_CATEGORY_DOWNLOAD_FAILED
 from src.core.errors import ProblematicDownloadSkipped
 
 
+_YOUTUBE_DOWNLOAD_START_INTERVAL_SEC = 3.0
+
+
 class DownloadTaskMixin:
+    def _wait_for_download_start(self, url: str) -> bool:
+        if not self.is_youtube_url(url):
+            return not self.cancel_flag.is_set()
+
+        while not self.cancel_flag.is_set():
+            with self.youtube_strategy_state_lock:
+                now = monotonic()
+                delay = getattr(self, "_next_youtube_download_start", now) - now
+                if delay <= 0:
+                    self._next_youtube_download_start = now + _YOUTUBE_DOWNLOAD_START_INTERVAL_SEC
+                    return True
+            if self.cancel_flag.wait(delay):
+                break
+        return False
+
     def download_single_video(self, url: str, index: int,
                                downloaded_videos: ThreadSafeList,
                                failed_urls: ThreadSafeList,
                                problematic_downloads: ThreadSafeList) -> None:
+        dashboard = getattr(self, "_dashboard_session", None)
+        status = "failed"
+        ready_path = None
         try:
+            if dashboard is not None:
+                dashboard.update(url, "starting")
             self.log(f"📥 [{index + 1}/{self.total_files.value()}]: {url}")
 
             if not self.validate_url(url):
@@ -30,21 +50,23 @@ class DownloadTaskMixin:
                 failed_urls.append(url)
                 return
 
-            if self.is_url_downloaded(url):
+            if self.should_skip_downloaded(url):
+                status = "skipped"
                 self.log("⏭️ Пропущено (уже скачано)", "WARNING")
                 return
 
-            if index > 0:
-                delay = random.uniform(2, 5)
-                if self.cancel_flag.wait(delay):
-                    return
+            if not self._wait_for_download_start(url):
+                return
 
+            if dashboard is not None:
+                dashboard.update(url, "downloading")
             result = self.run_yt_dlp_with_download_slot(url)
 
             if result and self.wait_for_file(result):
                 is_valid, reason = self.validate_downloaded_video(result, url)
                 if is_valid:
                     self.log(f"✅ Проверка скачанного видео: {reason}", "SUCCESS")
+                    self._change_active_batch(url=url)
                     # После успешного файла удаляем .part/.ytdl/.f137/.f140 хвосты этого ролика.
                     self.cleanup_download_temp_files(
                         Path(result).parent,
@@ -54,6 +76,7 @@ class DownloadTaskMixin:
                     )
                     downloaded_videos.append(result)
                     self.save_download_log(url)
+                    status, ready_path = "video", result
                 else:
                     failed_urls.append(url)
                     manual_video = self.move_video_to_manual_processing(
@@ -93,6 +116,7 @@ class DownloadTaskMixin:
                     )
 
         except ProblematicDownloadSkipped as e:
+            status = "problematic"
             item = e.to_log_item()
             item["index_in_session"] = index + 1
             item["total_in_session"] = self.total_files.value()
@@ -131,6 +155,10 @@ class DownloadTaskMixin:
             )
             failed_urls.append(url)
         finally:
+            if dashboard is not None:
+                if self.cancel_flag.is_set() and status == "failed":
+                    status = "cancelled"
+                dashboard.update(url, status, ready_path)
             if not self.cancel_flag.is_set():
                 self.update_progress()
 

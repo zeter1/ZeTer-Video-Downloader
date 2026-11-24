@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import shutil
 
-from src.core.constants import SUPPORTED_VIDEO_EXTENSIONS, VIDEO_MAX_HEIGHT, VIDEO_TARGET_HEIGHT
+from src.core.constants import (
+    MIN_VIDEO_FILE_SIZE_BYTES, SUPPORTED_VIDEO_EXTENSIONS, VIDEO_MAX_HEIGHT, VIDEO_TARGET_HEIGHT,
+)
+from src.core.download_temp import (
+    RESUME_RESULT_PREFIX, owned_resume_directory, plain_download_path, resume_media_title,
+    resume_workspace_key,
+)
+from src.downloads.files import matching_download_subtitles, publish_download_files
 from src.downloads.youtube_candidate_formats import proven_lower_video_format
 
 
@@ -27,6 +34,55 @@ class SuccessDecision:
     candidate_width: int = -1
     lower_video_format_id: Optional[str] = None
     semantic_failure: bool = False
+    verified_candidate_height: Optional[int] = None
+
+
+def discard_quality_candidate(app, directory: Path, candidate_path: Optional[str]) -> None:
+    if not candidate_path:
+        return
+    candidate = Path(candidate_path)
+    try:
+        if (candidate.parent != directory or not plain_download_path(directory.parent, directory=True)
+                or not plain_download_path(directory, directory=True)):
+            return
+        if plain_download_path(candidate):
+            candidate.unlink()
+        for subtitle in matching_download_subtitles(candidate).values():
+            subtitle.unlink()
+        if not any(directory.iterdir()):
+            directory.rmdir()
+    except OSError as error:
+        app.record_problem("Не удалось очистить резерв качества", "WARNING",
+                           "discard_quality_candidate", {}, error)
+
+
+def find_completed_attempt_output(app, result, url, workspace, video_files_before, expected_video_id):
+    if not owned_resume_directory(workspace):
+        if resume_workspace_key(workspace):
+            return None
+        return app.parse_yt_dlp_output(result.stdout, url, workspace, video_files_before, expected_video_id)
+
+    # The current after_move report selects the exact name. Filename heuristics
+    # are only appropriate when guessing a result from legacy download logs.
+    outputs = {
+        Path(line[len(RESUME_RESULT_PREFIX):])
+        for line in (result.stdout or '').splitlines()
+        if line.startswith(RESUME_RESULT_PREFIX)
+    }
+    if len(outputs) != 1:
+        return None
+    reported, = outputs
+    if reported.absolute().parent != workspace.absolute():
+        return None
+    path = workspace / reported.name
+    try:
+        if (resume_media_title(path, workspace) != path.name
+                and app.is_supported_video_file(path) and plain_download_path(path)
+                and path.stat().st_size >= MIN_VIDEO_FILE_SIZE_BYTES):
+            return str(path)
+    except OSError:
+        pass
+    return None
 
 
 def handle_successful_attempt(
@@ -47,8 +103,8 @@ def handle_successful_attempt(
     best_candidate_width: int,
     attempt_summaries: List[Dict],
 ) -> SuccessDecision:
-    temp_video_path = app.parse_yt_dlp_output(
-        result.stdout, url, download_temp_dir, video_files_before, expected_video_id
+    temp_video_path = find_completed_attempt_output(
+        app, result, url, download_temp_dir, video_files_before, expected_video_id,
     )
     if not temp_video_path:
         app.record_problem(
@@ -159,23 +215,24 @@ def handle_successful_attempt(
         width >= 1920 and 720 < height <= VIDEO_MAX_HEIGHT and width > height
     )
     is_progressive = bool(strategy.get("progressive_format"))
-    if not reached_target and not is_progressive:
+    if not reached_target and (not is_progressive or best_candidate_path is not None):
         candidate_score = height if height > 0 else 0
         keep_candidate = best_candidate_path is None or candidate_score > best_candidate_height
         if keep_candidate:
             quality_candidate_dir.mkdir(parents=True, exist_ok=True)
-            if best_candidate_path:
-                try:
-                    Path(best_candidate_path).unlink(missing_ok=True)
-                except Exception:
-                    pass
+            if not plain_download_path(quality_candidate_dir, directory=True):
+                raise OSError('The quality candidate directory is not a regular directory')
             source_candidate = Path(temp_video_path)
-            candidate_target = quality_candidate_dir / source_candidate.name
-            if candidate_target.exists():
-                candidate_target.unlink(missing_ok=True)
+            target = quality_candidate_dir / resume_media_title(source_candidate, download_temp_dir)
+            subtitles = matching_download_subtitles(source_candidate)
             with app.file_lock:
-                shutil.move(str(source_candidate), str(candidate_target))
-            best_candidate_path = str(candidate_target)
+                if subtitles:
+                    target = app.make_unique_media_path(target, subtitles=subtitles)
+                elif target.exists():
+                    target = app.make_unique_media_path(target)
+                publish_download_files(app, source_candidate, target, subtitles, shutil.move)
+            discard_quality_candidate(app, quality_candidate_dir, best_candidate_path)
+            best_candidate_path = str(target)
             best_candidate_height = candidate_score
             best_candidate_width = width if width > 0 else 0
             app.log(
@@ -188,21 +245,16 @@ def handle_successful_attempt(
                 Path(temp_video_path).unlink(missing_ok=True)
             except Exception:
                 pass
-        app.cleanup_download_temp_files(
-            download_temp_dir,
-            expected_video_id=expected_video_id,
-            final_video_path=None,
-            reason="quality_search_continue",
-        )
         return SuccessDecision(
             "retry",
             candidate_path=best_candidate_path,
             candidate_height=best_candidate_height,
             candidate_width=best_candidate_width,
             lower_video_format_id=proven_lower_video_format(result.stdout, width, height),
+            verified_candidate_height=height if keep_candidate and dimension_source == "ffprobe" and width > 0 else None,
         )
 
-    video_path = app.finalize_downloaded_video_file(temp_video_path, video_dir, expected_video_id)
+    video_path = app.finalize_downloaded_video_file(temp_video_path, video_dir, expected_video_id, url=url)
     if not video_path:
         return SuccessDecision("fatal")
 
@@ -212,14 +264,10 @@ def handle_successful_attempt(
     app.cleanup_download_temp_files(
         download_temp_dir,
         expected_video_id=expected_video_id,
-        final_video_path=None,
+        final_video_path=video_path,
         reason="download_success_temp_dir",
     )
-    try:
-        shutil.rmtree(download_temp_dir, ignore_errors=True)
-        shutil.rmtree(quality_candidate_dir, ignore_errors=True)
-    except Exception:
-        pass
+    discard_quality_candidate(app, quality_candidate_dir, best_candidate_path)
     if attempt > 1:
         app.log(f"✅ Успешно через: {strategy['name']}", "SUCCESS")
         app.record_problem(

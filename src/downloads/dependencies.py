@@ -1,7 +1,4 @@
-"""Проверка yt-dlp, ffmpeg и дополнительных зависимостей.
-
-Автоматически выделено из прежнего модуля video_download.py без изменения тел методов.
-"""
+"""Проверка yt-dlp, FFmpeg, ffprobe и дополнительных зависимостей."""
 
 import subprocess
 
@@ -12,27 +9,20 @@ class DependenciesMixin:
         self.missing_pip_packages = []
         self.optional_missing_deps = []
 
-        try:
-            r = subprocess.run(
-                ["yt-dlp", "--version"], capture_output=True,
-                timeout=5, creationflags=self.subprocess_flags
-            )
-            if r.returncode != 0:
-                self.missing_deps.append("yt-dlp")
-                self.missing_pip_packages.append("yt-dlp")
-        except (subprocess.SubprocessError, FileNotFoundError):
-            self.missing_deps.append("yt-dlp")
-            self.missing_pip_packages.append("yt-dlp")
-
-        try:
-            r = subprocess.run(
-                ["ffmpeg", "-version"], capture_output=True,
-                timeout=5, creationflags=self.subprocess_flags
-            )
-            if r.returncode != 0:
-                self.missing_deps.append("ffmpeg")
-        except (subprocess.SubprocessError, FileNotFoundError):
-            self.missing_deps.append("ffmpeg")
+        for tool, version_arg in (("yt-dlp", "--version"), ("ffmpeg", "-version"),
+                                  ("ffprobe", "-version")):
+            try:
+                result = subprocess.run(
+                    [tool, version_arg], capture_output=True,
+                    timeout=5, creationflags=self.subprocess_flags
+                )
+                if result.returncode == 0:
+                    continue
+            except (subprocess.SubprocessError, OSError):
+                pass
+            self.missing_deps.append(tool)
+            if tool == "yt-dlp":
+                self.missing_pip_packages.append(tool)
 
         js_runtime_found = False
         js_runtime_name  = None

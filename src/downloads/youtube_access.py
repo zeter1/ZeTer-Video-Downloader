@@ -154,7 +154,7 @@ class YouTubeAccessMixin:
             masked_proxy = self.mask_proxy_url(proxy_url)
             self.log(f"🌐 Проверяю proxy для yt-dlp: {masked_proxy}", "INFO")
             cmd = [
-                "yt-dlp", "--skip-download", "--no-playlist",
+                "yt-dlp", "--skip-download", "--no-playlist", "--no-cookies-from-browser",
                 "--encoding", "utf-8", "--socket-timeout", "20",
                 "--proxy", proxy_url, "--get-title", "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             ]

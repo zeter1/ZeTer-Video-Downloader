@@ -20,22 +20,11 @@ class DiagnosticsRetentionMixin(
         problem_cutoff = self.retention_cutoff(PROBLEM_LOG_RETENTION_DAYS)
         cleaned = 0
 
-        # Старые общие файлы не содержат даты на каждую запись, поэтому их нельзя
-        # честно отфильтровать по сроку хранения. Новые записи хранятся в
-        # сессионных файлах с датой, а эти файлы удаляются как устаревший формат.
+        # Очереди и история ссылок служат для восстановления. Срок хранения
+        # технических журналов не применяется к этим спискам.
         cleaned += self._delete_legacy_flat_logs([
-            self.history_file,
-            self.log_file,
-            self.video_ids_file,
             self.manual_processing_dir / "failed_all.txt",
         ])
-
-        cleaned += self._delete_old_files(
-            self.history_dir, ["downloaded_*.txt", "downloaded_history.txt"], history_cutoff
-        )
-        cleaned += self._delete_old_files(
-            self.downloaded_sessions_dir, ["downloaded_log_*.txt"], history_cutoff
-        )
         cleaned += self._delete_old_files(
             self.manual_processing_dir,
             ["failed_*.txt", "failed_all.txt", "not_converted_*.txt", "problematic_*.txt"],

@@ -1,17 +1,62 @@
-"""Временные файлы загрузки и их безопасная очистка.
-
-Автоматически выделено из прежнего модуля download_runtime.py без изменения тел методов.
-"""
+"""Временные файлы загрузки и их безопасная очистка."""
 
 from typing import Dict
 from typing import List
 from typing import Optional
 from pathlib import Path
-from typing import Set
 from datetime import datetime
 import re
+import stat
 
 from src.core.constants import SUPPORTED_VIDEO_EXTENSIONS, YT_DLP_RUNTIME_TAIL_LINES
+
+
+RESUME_MARKER = '.zvd-resume'
+RECOVERY_MARKER = '.preserve_download'
+RESUME_RESULT_PREFIX = '[ZVD_RESULT] '
+_RESUME_DIRECTORY = re.compile(r'resume-v1-([0-9a-f]{32})(?:-[0-9]+)?')
+_RESUME_MEDIA_NAME = re.compile(r'ZVD-([0-9a-f]{8}) \[([^]\r\n]+)\] (.+)')
+
+
+def plain_download_path(path: Path, *, directory: bool = False) -> bool:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    expected_type = stat.S_ISDIR if directory else stat.S_ISREG
+    return (
+        expected_type(info.st_mode)
+        and not getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        and (directory or info.st_nlink == 1)
+    )
+
+
+def resume_workspace_key(directory: Path) -> Optional[str]:
+    match = _RESUME_DIRECTORY.fullmatch(directory.name)
+    return match.group(1) if match else None
+
+
+def owned_resume_directory(directory: Path) -> bool:
+    key = resume_workspace_key(directory)
+    marker = directory / RESUME_MARKER
+    if (not key or directory.parent.name != '_temp_downloads'
+            or not plain_download_path(directory.parent.parent, directory=True)
+            or not plain_download_path(directory.parent, directory=True)
+            or not plain_download_path(directory, directory=True)
+            or not plain_download_path(marker)):
+        return False
+    identity = key.encode('ascii')
+    with marker.open('rb') as source:
+        return source.read(len(identity) + 1) == identity
+
+
+def resume_media_title(path: Path, workspace: Path) -> str:
+    """Имя без служебного префикса, который хранит выбранный формат yt-dlp."""
+    match = _RESUME_MEDIA_NAME.fullmatch(path.name)
+    key = resume_workspace_key(workspace)
+    if match and key and match.group(1) == key[:8]:
+        return match.group(3)
+    return path.name
 
 
 class DownloadTempMixin:
@@ -64,114 +109,37 @@ class DownloadTempMixin:
     def cleanup_download_temp_files(self, target_dir, expected_video_id: Optional[str] = None,
                                     final_video_path: Optional[str] = None,
                                     reason: str = "") -> List[str]:
-        """Удаляет мусор yt-dlp после успешной/неудачной попытки.
-
-        Чистим только временные хвосты: *.part, *.ytdl, *.temp.* и фрагменты
-        вида .f137.mp4/.f140.m4a, которые остались от оборванных DASH-попыток.
-        Готовый итоговый файл не трогаем.
-        """
+        """Удалить подтверждённые артефакты только после публикации этого видео."""
         deleted: List[str] = []
+        if reason != 'download_success_temp_dir' or not final_video_path:
+            return deleted
+        directory = Path(target_dir)
         try:
-            directory = Path(target_dir)
-            if not directory.exists() or not directory.is_dir():
+            published = Path(final_video_path)
+            if (not owned_resume_directory(directory)
+                    or published.parent != directory.parent.parent
+                    or not plain_download_path(published)
+                    or (directory / RECOVERY_MARKER).exists()):
                 return deleted
-
-            final_path = Path(final_video_path).resolve() if final_video_path else None
-            final_stem = Path(final_video_path).stem if final_video_path else ""
-            candidate_patterns = ["*.part", "*.ytdl", "*.temp.*", "*.f*.mp4", "*.f*.webm", "*.f*.m4a"]
-            seen: Set[str] = set()
-            candidates: List[Path] = []
-            for pattern in candidate_patterns:
-                for item in directory.glob(pattern):
-                    try:
-                        key = str(item.resolve())
-                    except OSError:
-                        key = str(item)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    candidates.append(item)
-
-            for item in candidates:
-                try:
-                    if not item.exists() or not item.is_file():
-                        continue
-                    if final_path is not None and item.resolve() == final_path:
-                        continue
-                    name = item.name
-                    stem = item.stem
-                    should_delete = False
-
-                    # Явные временные файлы yt-dlp безопасно удалить после завершения ролика.
-                    if name.endswith(".part") or name.endswith(".ytdl") or ".temp." in name:
-                        should_delete = True
-
-                    # Фрагменты DASH без .part: title.f137.mp4 / title.f140.m4a.
-                    if re.search(r"\.f\d+\.(mp4|webm|m4a)$", name, re.IGNORECASE):
-                        if reason == "start_new_download_session":
-                            should_delete = True
-                        elif expected_video_id and expected_video_id in name:
-                            should_delete = True
-                        elif final_stem and (name.startswith(final_stem + ".f") or stem.startswith(final_stem + ".f")):
-                            should_delete = True
-
-                    # Если в старой версии в имени был video_id, чистим только хвосты этого ролика.
-                    if expected_video_id and expected_video_id in name and (
-                        name.endswith(".part") or name.endswith(".ytdl") or ".temp." in name
-                        or re.search(r"\.f\d+\.(mp4|webm|m4a)$", name, re.IGNORECASE)
-                    ):
-                        should_delete = True
-
-                    if should_delete:
-                        size = item.stat().st_size
-                        item.unlink()
-                        deleted.append(f"{name} ({size} байт)")
-                except OSError as e:
-                    self.record_problem(
-                        "Не удалось удалить временный мусор yt-dlp",
-                        "WARNING", "cleanup_download_temp_files",
-                        {
-                            "file": str(item),
-                            "expected_video_id": expected_video_id,
-                            "final_video_path": final_video_path,
-                            "reason": reason,
-                        },
-                        e
-                    )
-
-            if deleted:
-                self.log(f"🧹 Удалён временный мусор yt-dlp: {len(deleted)} файл(ов)", "INFO")
-                self.record_problem(
-                    "Удалён временный мусор yt-dlp после скачивания",
-                    "INFO", "cleanup_download_temp_files",
-                    {
-                        "target_dir": str(directory),
-                        "expected_video_id": expected_video_id,
-                        "final_video_path": final_video_path,
-                        "reason": reason,
-                        "deleted_files": deleted[:20],
-                        "deleted_count": len(deleted),
-                    }
-                )
-        except Exception as e:
+            for item in directory.iterdir():
+                if resume_media_title(item, directory) == item.name:
+                    continue
+                if not owned_resume_directory(directory) or not plain_download_path(item):
+                    continue
+                item.unlink()
+                deleted.append(item.name)
+            if owned_resume_directory(directory) and set(directory.iterdir()) == {directory / RESUME_MARKER}:
+                (directory / RESUME_MARKER).unlink()
+                directory.rmdir()
+        except OSError as error:
             self.record_problem(
-                "Ошибка при очистке временного мусора yt-dlp",
-                "WARNING", "cleanup_download_temp_files",
-                {
-                    "target_dir": str(target_dir),
-                    "expected_video_id": expected_video_id,
-                    "final_video_path": final_video_path,
-                    "reason": reason,
-                },
-                e
+                "Не удалось очистить служебные файлы yt-dlp", "WARNING",
+                "cleanup_download_temp_files", {"deleted_count": len(deleted)}, error,
             )
+        if deleted:
+            self.log(f"🧹 Удалены временные файлы yt-dlp: {len(deleted)}", "INFO")
         return deleted
 
-
     def cleanup_stale_download_temp_files(self, target_dir) -> int:
-        """Чистит старые хвосты .part/.ytdl/.temp перед новой сессией."""
-        deleted = self.cleanup_download_temp_files(
-            target_dir, expected_video_id=None, final_video_path=None,
-            reason="start_new_download_session"
-        )
-        return len(deleted)
+        """При запуске сохраняем частичные файлы и содержимое пользовательской папки."""
+        return 0

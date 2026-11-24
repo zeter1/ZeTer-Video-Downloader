@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from src.downloads.youtube_failure_diagnostics import analyze_yt_dlp_failure
-from src.downloads.youtube_retry import build_attempt_summary
+from src.downloads.youtube_retry import build_attempt_summary, failure_message_evidence
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ def report_failed_attempt(
 
     network_failure_count, slow_network_failure_count, is_network_error = (
         app._updated_youtube_network_failure_counts(
-            last_error,
+            failure_message_evidence(last_error),
             elapsed_sec,
             network_failure_count,
             slow_network_failure_count,

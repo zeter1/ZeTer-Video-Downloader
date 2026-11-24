@@ -104,6 +104,41 @@ class QualityTests(unittest.TestCase):
 
 
 class AudioTests(unittest.TestCase):
+    def test_truncated_audio_is_not_published_as_full_duration_mp3(self):
+        import shutil
+        if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+            self.skipTest('FFmpeg and ffprobe required')
+        app = VideoDownloader.__new__(VideoDownloader)
+        app.cancel_flag = threading.Event()
+        app.file_lock = threading.Lock()
+        app.audio_quality = SimpleNamespace(get=lambda: '192k')
+        app.subprocess_flags = 0
+        app.log = Mock()
+        app.record_problem = Mock()
+        app.run_command = lambda cmd, timeout, *args: subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout)
+        with tempfile.TemporaryDirectory(prefix='truncated_audio_') as tmp:
+            root = Path(tmp)
+            app.manual_processing_dir = root / 'manual'
+            app.current_session_start = None
+            source = root / 'full.mp4'
+            damaged = root / 'damaged.mp4'
+            subprocess.run([
+                'ffmpeg', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i',
+                'testsrc2=size=1920x1080:rate=8:duration=4',
+                '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000',
+                '-t', '4', '-c:v', 'mpeg4', '-c:a', 'aac', '-movflags', '+faststart', str(source),
+            ], check=True, timeout=20)
+            payload = source.read_bytes()
+            prefix = payload[:len(payload) * 55 // 100]
+            damaged.write_bytes(prefix)
+            self.assertAlmostEqual(app.get_media_duration(str(damaged)), 4, delta=.1)
+            self.assertTrue(app.has_audio_stream(str(damaged)))
+
+            self.assertEqual(app.convert_videos_to_audio([str(damaged)], root), [])
+            self.assertFalse((root / 'damaged.mp3').exists())
+            self.assertEqual((app.manual_processing_dir / damaged.name).read_bytes(), prefix)
+
     def test_failed_publication_survives_next_session_cleanup(self):
         app=VideoDownloader.__new__(VideoDownloader)
         app.file_lock=threading.Lock()
@@ -125,6 +160,7 @@ class AudioTests(unittest.TestCase):
         app = VideoDownloader.__new__(VideoDownloader)
         app.get_media_duration = Mock(return_value=10.)
         app.get_audio_duration = Mock(return_value=10.02)
+        app.get_decoded_audio_duration = Mock(return_value=10.02)
         with tempfile.TemporaryDirectory() as d:
             source, output = Path(d)/'source.mkv', Path(d)/'out.mp3'
             output.write_bytes(b'x'*2000)
@@ -158,17 +194,25 @@ class AudioTests(unittest.TestCase):
         app.log=Mock()
         app.record_problem=Mock()
         app.run_command=lambda cmd, timeout, *args: subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
-        with tempfile.TemporaryDirectory(prefix='audio_') as d:
-            source=Path(d)/'тест видео.mkv'
-            subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i','color=size=64x64:rate=10',
-                            '-f','lavfi','-i','sine=frequency=880:sample_rate=48000','-t','2',
-                            '-c:v','mpeg4','-c:a','pcm_s16le',str(source)],check=True,timeout=20)
-            result=app.convert_videos_to_audio([str(source)],Path(d))
-            self.assertEqual(result,[str(Path(d)/'тест видео.mp3')])
-            self.assertTrue(source.exists())
-            self.assertAlmostEqual(app.get_audio_duration(result[0]),2,delta=.1)
-            decoded=subprocess.run(['ffmpeg','-v','error','-i',result[0],'-f','s16le','-ac','1','pipe:1'],
-                                   capture_output=True,check=True,timeout=20).stdout
-            import array
-            samples=array.array('h',decoded)
-            self.assertGreater(sum(x*x for x in samples)/len(samples),10000)
+        from array import array
+        for input_audio_duration in (1, 2):
+            with self.subTest(input_audio_duration=input_audio_duration), tempfile.TemporaryDirectory(prefix='audio_') as d:
+                source = Path(d) / 'тест видео.mkv'
+                subprocess.run([
+                    'ffmpeg', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'color=size=64x64:rate=10',
+                    '-f', 'lavfi', '-i', f'sine=frequency=880:sample_rate=48000:duration={input_audio_duration}',
+                    '-t', '2', '-c:v', 'mpeg4', '-c:a', 'pcm_s16le', str(source),
+                ], check=True, timeout=20)
+                result = app.convert_videos_to_audio([str(source)], Path(d))
+                self.assertEqual(result, [str(Path(d) / 'тест видео.mp3')])
+                self.assertTrue(source.exists())
+                self.assertAlmostEqual(app.get_audio_duration(result[0]), 2, delta=.1)
+                decoded = subprocess.run([
+                    'ffmpeg', '-v', 'error', '-i', result[0], '-f', 's16le', '-ac', '1', 'pipe:1',
+                ], capture_output=True, check=True, timeout=20).stdout
+                samples = array('h', decoded)
+                self.assertGreater(max(samples[:24000]), 1000)
+                if input_audio_duration == 1:
+                    self.assertLess(max(abs(sample) for sample in samples[-24000:]), 10)
+                else:
+                    self.assertGreater(max(samples[-24000:]), 1000)

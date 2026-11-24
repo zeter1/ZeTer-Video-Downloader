@@ -102,7 +102,7 @@ class SettingsControlsMixin:
                 "INFO"
             )
         self.log(
-            f"📄 Debug этого запуска: Логи скачивания/Сессии запусков/{self.debug_session_log_file.name}",
+            f"📄 Debug этого запуска: История скачиваний/Логи скачивания/Сессии запусков/{self.debug_session_log_file.name}",
             "INFO"
         )
         if getattr(self, "retention_cleanup_count", 0):
