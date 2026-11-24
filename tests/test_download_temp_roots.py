@@ -50,9 +50,12 @@ class DownloadTempRootTests(unittest.TestCase):
         for root in self.roots:
             root.mkdir()
         real_rmdir = Path.rmdir
+        # Production canonicalizes video_dir before constructing child paths.
+        # On Windows the resolved spelling may differ from the fixture spelling.
+        canonical_blocked = self.video_dir.resolve(strict=True) / self.roots[0].name
 
         def locked(path):
-            if path == self.roots[0]:
+            if path == canonical_blocked:
                 raise PermissionError('fixture lock')
             return real_rmdir(path)
 
@@ -68,10 +71,11 @@ class DownloadTempRootTests(unittest.TestCase):
         for root in self.roots:
             root.mkdir()
         real_lstat = Path.lstat
+        canonical_blocked = self.video_dir.resolve(strict=True) / self.roots[0].name
 
         def reparse(path, *args, **kwargs):
             info = real_lstat(path, *args, **kwargs)
-            if path == self.roots[0]:
+            if path == canonical_blocked:
                 return SimpleNamespace(st_mode=info.st_mode,
                     st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
                     st_dev=info.st_dev, st_ino=info.st_ino)

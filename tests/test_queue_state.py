@@ -21,6 +21,8 @@ class QueueRecoveryTests(unittest.TestCase):
         self.root_path = Path(temp.name)
         self.destination = self.root_path / "Папка видео"
         self.destination.mkdir()
+        # DownloadManagerMixin.start_download stores a resolved output folder.
+        self.destination = self.destination.resolve(strict=True)
         self.urls = [f"https://example.invalid/video/{index}" for index in range(89)]
 
     def app(self, text=""):
