@@ -275,7 +275,10 @@ class AudioPipelineFailures(unittest.TestCase):
             self.assertLess(error, 500)
 
     def test_mp3_split_bounds_windows_command_for_long_output_paths(self):
-        split_dir = self.root / ('д' * max(10, 205 - len(str(self.root))))
+        # Keep the full path long without exceeding the UTF-8 component limit.
+        name_chars = max(10, 203 - len(str(self.root)))
+        first_chars = name_chars // 2
+        split_dir = self.root / ('д' * first_chars) / ('д' * (name_chars - first_chars))
         self.app.get_decoded_audio_duration.side_effect = lambda p: 100 * 3600 if p == self.source else 3600.
         commands = []
 
