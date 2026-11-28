@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from src.ui import layout
 
@@ -35,9 +35,11 @@ class SidebarLayoutTests(unittest.TestCase):
         self.resize = next(call.args[1] for call in self.sidebar.bind.call_args_list
                            if call.args[0] == "<Configure>")
 
-    def test_both_cards_are_placed_directly_in_the_sidebar_frame(self):
-        self.owner._studio_build_events.assert_called_once_with(self.content)
+    def test_only_settings_are_built_in_the_sidebar_frame(self):
         self.owner._studio_build_settings.assert_called_once_with(self.content)
+        self.assertEqual(self.owner.method_calls, [
+            call._studio_build_settings(self.content),
+        ])
         self.assertEqual(self.content.place.call_args.kwargs["relwidth"], 1)
         self.assertEqual(self.content.place.call_args.kwargs["y"], 0)
         self.resize(None)

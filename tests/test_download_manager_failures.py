@@ -11,6 +11,7 @@ from src.application import VideoDownloader
 from src.core.errors import CommandCancelledError
 from src.core.session_settings import session_setting
 from src.downloads.queue_state import read_batch
+from src.downloads.session_view import DownloadSessionView
 
 
 class ManagerFailures(unittest.TestCase):
@@ -105,6 +106,129 @@ class ManagerFailures(unittest.TestCase):
         app.validate_video_packets = Mock(return_value=True)
         app.validate_converted_audio = Mock(return_value=(True, 'fixture', 2.0, 2.0))
         app.run_command = Mock()
+
+    def prepare_audio_retry_controls(self):
+        app = self.app
+        app.is_downloading = False
+        app.missing_deps = ['yt-dlp']
+        app.settings = {
+            'download_subtitles': False, 'split_hours': 0,
+            'proxy_enabled': False, 'proxy_url': '',
+        }
+        app.concurrent_var = Mock()
+        app.concurrent_var.get.return_value = 1
+        app.main_progress = {}
+        app.youtube_strategy_state_lock = threading.Lock()
+        app.save_queue_draft = Mock(return_value=True)
+        for name in ('save_current_settings', 'set_save_path_controls_enabled',
+                     'total_files', 'completed_files', 'download_btn', 'cancel_btn',
+                     'main_progress_frame', 'update_main_progress'):
+            setattr(app, name, Mock())
+
+    def test_retry_targets_one_verified_video_and_defers_batch_merge(self):
+        app = self.app
+        sibling_url = 'https://example.invalid/sibling'
+        pending_url = 'https://example.invalid/pending'
+        url, video = self.prepare_recovered_video(sibling_url, pending_url)
+        sibling = video.with_name('Второе видео.mp4')
+        sibling.write_bytes(b'second verified video')
+        app.prepare_media_receipt('video_files', sibling_url, sibling, sibling)
+        archive = app._batch_path
+        audio_dir = video.parent.parent / 'Аудио'
+        self.prepare_audio_conversion()
+        app._probe_media = Mock(return_value=(
+            {'streams': [{'codec_type': 'video'}, {'codec_type': 'audio'}]},
+            SimpleNamespace(returncode=0, stderr=''),
+        ))
+        app.merge_audio = SimpleNamespace(get=lambda: True)
+        app.merge_audio_files = Mock()
+        app.run_command.return_value = SimpleNamespace(returncode=1, stderr='fixture encode failure', stdout='')
+        app.download_manager([])
+        self.assertEqual(app.run_command.call_count, 2)
+        before = read_batch(archive)
+        self.assertEqual(before['status'], 'audio_pending')
+        self.assertEqual(before['audio_files'], {})
+        self.prepare_audio_retry_controls()
+        app.studio_queue_parent = Mock()
+        app._dashboard_session = DownloadSessionView([url, sibling_url, pending_url])
+        app._dashboard_session.update(url, 'video', video)
+        app._dashboard_session.audio(video, 'audio_error', reason='fixture encode failure')
+        app._dashboard_session.update(sibling_url, 'audio_error', sibling)
+        app.finish_download.side_effect = lambda: app._dashboard_session.finish(app.download_outcome)
+        app.run_command.reset_mock()
+        app._probe_media.reset_mock()
+        with patch.object(app, 'validate_video_packets', side_effect=AssertionError('menu probed media')):
+            self.assertTrue(app.can_retry_queue_audio(url))
+            self.assertTrue(app.can_retry_queue_audio(sibling_url))
+            self.assertFalse(app.can_retry_queue_audio(pending_url))
+        app._probe_media.assert_not_called()
+        app.show_completion_notification = Mock()
+        with patch('src.downloads.manager.threading.Thread') as worker:
+            worker.return_value.start.side_effect = RuntimeError('fixture thread start failed')
+            self.assertFalse(app.retry_queue_audio(url))
+        self.assertEqual(dict(app._dashboard_session.snapshot()[1])[url][0], 'audio_error')
+        self.assertEqual(app._dashboard_session.audio_error(url), 'fixture encode failure')
+        self.assertEqual(app._dashboard_session.media_paths(url), (video, None))
+
+        def cancelled(*args):
+            app.cancel_flag.set()
+            app.confirm_queue_pause()
+            raise CommandCancelledError('fixture cancelled')
+        app.run_command.side_effect = cancelled
+        self.assertTrue(app.retry_queue_audio(url))
+        app._download_manager_thread.join(timeout=5)
+        self.assertFalse(app._download_manager_thread.is_alive())
+        self.assertEqual(app.download_outcome, 'cancelled')
+        self.assertEqual(read_batch(archive), before)
+        self.assertEqual(list(audio_dir.glob('*.mp3')), [])
+        self.assertEqual(dict(app._dashboard_session.snapshot()[1])[url][0], 'audio_error')
+
+        def publish(command, timeout, operation, context):
+            self.assertEqual(operation, 'convert_video_to_audio')
+            self.assertEqual(Path(context['video_file']), video)
+            self.assertEqual(Path(command[command.index('-i') + 1]), video)
+            Path(command[-1]).write_bytes(b'selected mp3')
+            return SimpleNamespace(returncode=0, stderr='', stdout='')
+        app.is_downloading = False
+        app.run_command.side_effect = publish
+        self.assertTrue(app.retry_queue_audio(url))
+        app._download_manager_thread.join(timeout=5)
+        self.assertFalse(app._download_manager_thread.is_alive())
+        self.assertEqual(app.download_outcome, 'completed')
+        batch = read_batch(archive)
+        self.assertEqual(batch['status'], 'audio_pending')
+        self.assertEqual(batch['video_files'], before['video_files'])
+        self.assertEqual(batch['urls'], [url, sibling_url, pending_url])
+        self.assertEqual(app._unfinished_batch_urls(batch), [pending_url])
+        self.assertEqual(set(batch['audio_files']), {video.name})
+        self.assertEqual(Path(app.existing_batch_audio(video, audio_dir)).read_bytes(), b'selected mp3')
+        self.assertEqual(video.read_bytes(), b'already published video')
+        self.assertEqual(sibling.read_bytes(), b'second verified video')
+        self.assertEqual(app.run_command.call_count, 2)
+        app.download_single_video_task.assert_not_called()
+        app.merge_audio_files.assert_not_called()
+        rows = dict(app._dashboard_session.snapshot()[1])
+        self.assertEqual([rows[link][0] for link in (url, sibling_url, pending_url)],
+                         ['done', 'audio_error', 'waiting'])
+
+        app.is_downloading = False
+        self.assertFalse(app.retry_queue_audio(url))
+        self.assertEqual(app.run_command.call_count, 2)
+
+        def publish_sibling(command, timeout, operation, context):
+            self.assertEqual(Path(context['video_file']), sibling)
+            Path(command[-1]).write_bytes(b'sibling mp3')
+            return SimpleNamespace(returncode=0, stderr='', stdout='')
+
+        app.run_command.side_effect = publish_sibling
+        app.cancel_flag.clear()
+        app.download_manager([])
+        self.assertEqual(app.run_command.call_count, 3)
+        merge_inputs = app.merge_audio_files.call_args.args[0]
+        self.assertEqual([Path(path).read_bytes() for path in merge_inputs],
+                         [b'selected mp3', b'sibling mp3'])
+        app.download_single_video_task.assert_not_called()
+        self.assertEqual(app._unfinished_batch_urls(read_batch(archive)), [pending_url])
 
     def test_confirmed_no_audio_keeps_video_without_offering_retry(self):
         app = self.app

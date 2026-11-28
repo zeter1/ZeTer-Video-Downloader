@@ -3,6 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
+from typing import NamedTuple
 import json
 import threading
 import uuid
@@ -22,25 +23,40 @@ def read_batch(path):
     return data
 
 
-def read_archived_video_titles(archive_dir, url_identity):
-    """Recover display titles from recent saved file names without opening media."""
-    titles = {}
+class ArchivedVideo(NamedTuple):
+    title: str
+    directory: Path
+    video: list
+    audio: list | None
+
+    def media_paths(self):
+        video = restore_media_receipt(self.directory / "Видео", self.video)
+        audio = restore_media_receipt(self.directory / "Аудио", self.audio) if self.audio else None
+        return tuple(Path(path) if path is not None else None for path in (video, audio))
+
+
+def read_archived_video_entries(archive_dir, url_identity):
+    """Index recent titles and receipts without opening or probing media."""
+    entries = {}
     try:
         paths = sorted((archive_dir / STARTED_QUEUES_FOLDER).glob("queue_*.json"), reverse=True)
     except OSError:
-        return titles
+        return entries
     for path in paths[:128]:
         try:
             if path.stat().st_size > 2 * 1024 * 1024:
                 continue
             batch = read_batch(path)
+            directory = Path(batch["directory"])
+            audio_files = batch.get("audio_files", {})
             for url, receipt in batch.get("video_files", {}).items():
                 title = Path(receipt[0]).stem.strip()
                 if title:
-                    titles.setdefault(url_identity(url), title)
+                    entries.setdefault(url_identity(url),
+                                       ArchivedVideo(title, directory, receipt, audio_files.get(receipt[0])))
         except (OSError, ValueError):
             continue
-    return titles
+    return entries
 
 
 def _file_name(name):
@@ -305,6 +321,37 @@ class QueueStateMixin:
         batch = getattr(self, "_batch", None)
         receipt = batch and batch.get("audio_files", {}).get(video.name)
         return restore_media_receipt(audio_dir, receipt) if receipt else None
+
+    def _queue_audio_retry_receipt(self, url):
+        batch = getattr(self, "_batch", None)
+        if (not batch or batch.get("resume_disabled")
+                or batch["status"] not in ("audio_pending", "paused")):
+            return None
+        return batch.get("video_files", {}).get(url)
+
+    def _queue_audio_retry_video(self, url):
+        receipt = self._queue_audio_retry_receipt(url)
+        if receipt is None:
+            return None
+        directory = Path(self._batch["directory"])
+        video = restore_media_receipt(directory / "Видео", receipt)
+        if video and not self.existing_batch_audio(Path(video), directory / "Аудио"):
+            return video
+        return None
+
+    def _finish_queue_audio_retry(self, audio_dir, *, merge_audio):
+        """Keep the queue resumable until its remaining downloads or merge can run."""
+        batch = self._batch
+        if any(not self.existing_batch_audio(Path(path), audio_dir)
+               for path in self.batch_existing_videos(batch).values()):
+            return True
+        if self._unfinished_batch_urls(batch):
+            status = "paused"
+        elif merge_audio:
+            return True
+        else:
+            status = "completed"
+        return self._change_active_batch(status=status, expected_status=batch["status"])
 
     def prepare_batch_merge_receipt(self, audio_files, publications):
         batch = getattr(self, "_batch", None)

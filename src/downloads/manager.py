@@ -23,16 +23,29 @@ from src.downloads.youtube_queue_policy import reset_queue_capabilities
 
 
 class DownloadManagerMixin:
-    def download_manager(self, urls: List[str]) -> None:
+    def can_retry_queue_audio(self, url) -> bool:
+        """Check menu eligibility without opening any of the saved media."""
+        return (not self.is_downloading and not getattr(self, "_closing_download_window", False)
+                and self._queue_audio_retry_receipt(url) is not None)
+
+    def retry_queue_audio(self, url) -> bool:
+        if not self.can_retry_queue_audio(url) or not self._queue_audio_retry_video(url):
+            return False
+        return self.start_download(retry_audio_url=url) is True
+
+    def download_manager(self, urls: List[str], *, retry_audio_url=None) -> None:
         self.download_outcome = "running"
         video_dir = None
-        summary = {"queued_url_count": len(urls)}
+        summary = {"queued_url_count": 1 if retry_audio_url is not None else len(urls)}
         batch = getattr(self, "_batch", None)
         audio_only = batch is not None and batch["status"] == "audio_pending"
         try:
             video_dir = Path(session_setting(self, "save_path")) / "Видео"
             # Retain validated final MP4s until audio conversion completes.
             self._batch_video_decodes = (video_dir.absolute(), {})
+            if retry_audio_url is not None:
+                summary.update(self._run_queue_audio_retry(retry_audio_url))
+                return
             summary.update(self._run_download_session(urls))
             if (audio_only and self.download_outcome == "completed"
                     and self._unfinished_batch_urls(self._batch)):
@@ -57,7 +70,7 @@ class DownloadManagerMixin:
             self.download_outcome = "failed"
             self.record_problem(
                 "Сессия скачивания прервана ошибкой", "ERROR", "download_manager_failed",
-                {"queued_url_count": len(urls)}, error,
+                {"queued_url_count": summary["queued_url_count"]}, error,
             )
             self.log(f"❌ Ошибка сессии скачивания: {error}", "ERROR")
         finally:
@@ -67,10 +80,52 @@ class DownloadManagerMixin:
                 self.write_problem_session_summary(self.download_outcome, summary)
             finally:
                 try:
-                    if video_dir is not None:
+                    if video_dir is not None and retry_audio_url is None:
                         self.cleanup_empty_download_temp_roots(video_dir)
                 finally:
                     self.finish_download()
+
+    def _run_queue_audio_retry(self, url) -> dict:
+        dashboard = getattr(self, "_dashboard_session", None)
+        converted = []
+        audio_dir = Path(session_setting(self, "save_path")) / "Аудио"
+        try:
+            video = self._queue_audio_retry_video(url)
+            if video and not self.cancel_flag.is_set():
+                if dashboard is not None:
+                    dashboard.update(url, "audio", video)
+                converted = self.convert_videos_to_audio([video], audio_dir)
+            elif not self.cancel_flag.is_set():
+                if dashboard is not None:
+                    dashboard.update(url, "audio_error")
+                self.log("⚠️ Сохранённый MP4 для повтора недоступен или MP3 уже создан.", "WARNING")
+        except Exception:
+            if dashboard is not None:
+                dashboard.update(url, "audio_error")
+            raise
+
+        self.download_outcome = "cancelled" if self.cancel_flag.is_set() else "failed"
+        if self.download_outcome == "cancelled" and not converted and dashboard is not None:
+            dashboard.update(url, "audio_error")
+        if self.download_outcome != "cancelled" and converted:
+            self.completed_files.increment(1)
+            merge_audio = session_setting(self, "merge_audio")
+            if self._finish_queue_audio_retry(audio_dir, merge_audio=merge_audio):
+                self.download_outcome = "completed"
+                if merge_audio:
+                    self.log("ℹ️ Объединение MP3 доступно через «Продолжить очередь».", "INFO")
+            else:
+                self.record_problem(
+                    "Не удалось записать итог повтора MP3 в журнал очереди", "ERROR",
+                    "download_batch_finish_write_failed", {"queued_url_count": 1},
+                )
+                self.log("❌ Не удалось записать итог в журнал очереди. Готовый MP3 сохранён.", "ERROR")
+        return {
+            "downloaded_video_count": 0,
+            "converted_audio_count": len(converted),
+            "cancel_requested": self.cancel_flag.is_set(),
+            "elapsed_sec": round(time.time() - self.download_start_time, 2) if self.download_start_time else 0,
+        }
 
     def _run_download_session(self, urls: List[str]) -> dict:
         reset_queue_capabilities(self)
@@ -297,9 +352,11 @@ class DownloadManagerMixin:
         }
 
 
-    def start_download(self, *, resume_urls=None) -> None:
+    def start_download(self, *, resume_urls=None, retry_audio_url=None) -> bool | None:
         if self.is_downloading or getattr(self, "_closing_download_window", False):
             return
+        if retry_audio_url is not None:
+            resume_urls = []
         if not self.save_queue_draft():
             messagebox.showerror("Очередь скачивания", "Не удалось сохранить список ссылок перед началом загрузки.")
             return
@@ -371,10 +428,11 @@ class DownloadManagerMixin:
         # прокси/VPN и ничего не доказывает о доступности выбранного сайта.
 
         started = datetime.now().astimezone()
-        resume_paused = resume_urls is not None and self._batch["status"] == "paused"
+        resume_paused = (retry_audio_url is None and resume_urls is not None
+                         and self._batch["status"] == "paused")
         try:
-            directory = str(Path(session_setting(self, "save_path")).expanduser().resolve())
             if resume_urls is None:
+                directory = str(Path(session_setting(self, "save_path")).expanduser().resolve())
                 audio_options = {
                     name: session_setting(self, name)
                     for name in ("audio_quality", "merge_audio", "split_hours")
@@ -414,10 +472,18 @@ class DownloadManagerMixin:
                 "INFO"
             )
 
-        self.total_files.reset(len(urls))
+        status_urls = [retry_audio_url] if retry_audio_url is not None else urls
+        self.total_files.reset(len(status_urls))
         self.completed_files.reset(0)
         if hasattr(self, "studio_queue_parent"):
-            self._dashboard_session = DownloadSessionView(urls, already_done)
+            previous = getattr(self, "_dashboard_session", None)
+            if retry_audio_url is not None and previous is not None:
+                self._dashboard_session = previous.for_audio_retry(retry_audio_url)
+            else:
+                self._dashboard_session = DownloadSessionView(status_urls, already_done)
+                if retry_audio_url is not None:
+                    self._dashboard_session.phase("Создание MP3")
+                    self._dashboard_session.update(retry_audio_url, "audio")
         self.download_start_time = time.time()
         with self.youtube_strategy_state_lock:
             self.youtube_primary_auth_failure_count = 0
@@ -428,34 +494,38 @@ class DownloadManagerMixin:
         self.cancel_btn.config(state=tk.NORMAL)
         self.main_progress_frame.grid()
         self.main_progress['value'] = 0
-        self.main_progress['maximum'] = max(1, len(urls))
+        self.main_progress['maximum'] = max(1, len(status_urls))
         self.update_main_progress(0)
 
-        self.log(f"🚀 Начало загрузки {len(urls)} видео", "INFO")
+        if retry_audio_url is not None:
+            self.log("▶ Повторяю создание MP3 из выбранного сохранённого видео.", "INFO")
+        else:
+            self.log(f"🚀 Начало загрузки {len(urls)} видео", "INFO")
+        proxy_url = "" if retry_audio_url is not None else self.get_proxy_url()
         self.record_problem(
             "Старт сессии скачивания",
             "INFO", "download_session_started",
             {
-                "url_count": len(urls),
-                "urls": urls[:MAX_URLS_PER_SESSION],
+                "url_count": len(status_urls),
+                "urls": status_urls[:MAX_URLS_PER_SESSION],
                 "quality": "1080p",
                 "audio_quality": session_setting(self, "audio_quality"),
                 "max_concurrent": self.max_concurrent,
                 "merge_audio": session_setting(self, "merge_audio"),
                 "download_subtitles": session_setting(self, "download_subtitles"),
-                "proxy_enabled": bool(self.get_proxy_url()),
-                "proxy_url_masked": self.mask_proxy_url(self.get_proxy_url()),
-                "save_path": session_setting(self, "save_path"),
+                "proxy_enabled": bool(proxy_url),
+                "proxy_url_masked": self.mask_proxy_url(proxy_url),
+                "save_path": directory,
             }
         )
         self.write_problem_session_summary(
             "running",
             {
-                "queued_url_count": len(urls),
+                "queued_url_count": len(status_urls),
                 "quality": "1080p",
                 "max_concurrent": self.max_concurrent,
                 "merge_audio": session_setting(self, "merge_audio"),
-                "proxy_enabled": bool(self.get_proxy_url()),
+                "proxy_enabled": bool(proxy_url),
             },
         )
 
@@ -479,9 +549,13 @@ class DownloadManagerMixin:
                 )
                 # The recovery list already accounts for history and missing recorded outputs.
                 self.download_settings_snapshot["skip_downloaded"] = False
-            thread = threading.Thread(
-                target=self.download_manager, args=(urls,), daemon=True
-            )
+            if retry_audio_url is None:
+                thread = threading.Thread(target=self.download_manager, args=(urls,), daemon=True)
+            else:
+                thread = threading.Thread(
+                    target=self.download_manager, args=(urls,),
+                    kwargs={"retry_audio_url": retry_audio_url}, daemon=True,
+                )
             self._download_manager_thread = thread
             thread.start()
         except Exception as error:
@@ -495,11 +569,17 @@ class DownloadManagerMixin:
                 "Не удалось запустить поток сессии скачивания",
                 "ERROR",
                 "download_thread_start_failed",
-                {"queued_url_count": len(urls)},
+                {"queued_url_count": len(status_urls)},
                 error,
             )
             self.log(f"❌ Не удалось запустить скачивание: {error}", "ERROR")
             self.write_problem_session_summary(
-                "failed", {"queued_url_count": len(urls), "worker_started": False}
+                "failed", {"queued_url_count": len(status_urls), "worker_started": False}
             )
+            dashboard = getattr(self, "_dashboard_session", None)
+            if retry_audio_url is not None and dashboard is not None:
+                dashboard.update(retry_audio_url, "audio_error")
             self._finish_download_ui()
+        else:
+            if retry_audio_url is not None:
+                return True

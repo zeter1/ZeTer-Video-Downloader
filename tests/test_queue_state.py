@@ -278,6 +278,31 @@ class QueueRecoveryTests(unittest.TestCase):
         reopened.start_download.assert_called_once_with(resume_urls=[])
         self.assertEqual(reopened.batch_existing_videos(), {url: str(final)})
 
+    def test_retry_rejects_missing_or_replaced_source_receipt(self):
+        app = self.app()
+        batch_path = self.new_batch(app)
+        url, missing_url = self.urls[:2]
+        video = self.destination / "Видео" / "готово.mp4"
+        video.parent.mkdir()
+        video.write_bytes(b"verified original")
+        app.prepare_media_receipt("video_files", url, video, video)
+        self.assertFalse(app.can_retry_queue_audio(url))  # An active batch is reserved for resume.
+        app._change_active_batch(status="audio_pending")
+        archive = batch_path.read_bytes()
+
+        self.assertFalse(app.can_retry_queue_audio(missing_url))
+        self.assertFalse(app.retry_queue_audio(missing_url))
+        self.assertTrue(app.can_retry_queue_audio(url))
+        app.is_downloading = True
+        self.assertFalse(app.can_retry_queue_audio(url))
+        app.is_downloading = False
+        video.write_bytes(b"replacement with a different fingerprint")
+        self.assertFalse(app.retry_queue_audio(url))
+        video.unlink()
+        self.assertFalse(app.retry_queue_audio(url))
+        self.assertEqual(batch_path.read_bytes(), archive)
+        app.start_download.assert_not_called()
+
     def test_replaced_audio_does_not_match_prepared_file(self):
         first = self.app()
         self.new_batch(first)

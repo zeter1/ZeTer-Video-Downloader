@@ -80,6 +80,8 @@ class AudioConvertMixin:
             cmd.extend(["-ar", "48000", "-ac", "2", str(temp_audio_file)])
 
             converted_before = len(converted)
+            failures_before = len(failed_conversions)
+            no_audio_stream = False
             try:
                 if not self.validate_video_packets(video_file):
                     reason = "FFmpeg не смог полностью прочитать исходное видео и аудио"
@@ -92,8 +94,11 @@ class AudioConvertMixin:
                         "invalid_video": True,
                     })
                     continue
-                if not self.has_audio_stream(str(video_file)):
-                    reason = "аудиодорожка не обнаружена"
+                audio_presence = self.probe_audio_stream_presence(str(video_file))
+                if audio_presence is not True:
+                    no_audio_stream = audio_presence is False
+                    reason = ("Аудиодорожка не обнаружена" if no_audio_stream
+                              else "Не удалось проверить аудиодорожку")
                     self.log(f"[{idx}/{len(video_files)}] ❌ {reason}: {video_file.name}", "ERROR")
                     failed_conversions.append({
                         "video_file": str(video_file),
@@ -101,10 +106,11 @@ class AudioConvertMixin:
                         "reason": reason,
                         "source_duration": source_duration,
                     })
-                    self.record_problem(
-                        "Конвертация невозможна: аудиодорожка не обнаружена",
-                        "ERROR", "convert_video_to_audio_no_stream", failed_conversions[-1],
-                    )
+                    if no_audio_stream:
+                        self.record_problem(
+                            "Конвертация невозможна: аудиодорожка не обнаружена",
+                            "ERROR", "convert_video_to_audio_no_stream", failed_conversions[-1],
+                        )
                     continue
                 saved = self.existing_batch_audio(video_file, audio_dir)
                 if saved:
@@ -225,8 +231,10 @@ class AudioConvertMixin:
             finally:
                 if dashboard is not None:
                     status = ("done" if len(converted) > converted_before else
-                              "video" if self.cancel_flag.is_set() else "audio_error")
-                    dashboard.audio(video_file, status)
+                              "video" if self.cancel_flag.is_set() else
+                              "audio_missing" if no_audio_stream else "audio_error")
+                    reason = (failed_conversions[-1]["reason"] if len(failed_conversions) > failures_before else "")
+                    dashboard.audio(video_file, status, converted[-1] if status == "done" else None, reason=reason)
 
         if self.cancel_flag.is_set():
             self.log(
@@ -244,6 +252,8 @@ class AudioConvertMixin:
                 item["original_video_file"] = original_video
                 if not item.get("invalid_video"):
                     continue
+                if dashboard is not None:
+                    dashboard.forget_video(original_video)
                 manual_video = self.move_video_to_manual_processing(
                     original_video, str(item.get("reason", "conversion_failed"))
                 )

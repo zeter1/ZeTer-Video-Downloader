@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 from src.application import VideoDownloader
 from src.core.errors import CommandCancelledError
+from src.downloads.session_view import DownloadSessionView
 
 
 class AudioPipelineFailures(unittest.TestCase):
@@ -44,10 +45,12 @@ class AudioPipelineFailures(unittest.TestCase):
         self.assertEqual(list(playlist.parent.iterdir()), [playlist])
 
     def test_split_failure_preserves_source_and_old_files(self):
+        self.app._dashboard_session = Mock()
         old=self.root/'part_000.mp3'
         old.write_bytes(b'old')
         with self.assertRaises(RuntimeError):
             self.app.split_audio_file(self.source,self.root,'output',1/3600)
+        self.app._dashboard_session.phase.assert_called_once_with("Разбивка аудио на части")
         self.assertEqual(self.source.read_bytes(),b'a'*2000)
         self.assertEqual(old.read_bytes(),b'old')
 
@@ -143,7 +146,7 @@ class AudioPipelineFailures(unittest.TestCase):
         old=self.root/'video.mp3'
         old.write_bytes(b'unrelated audio')
         self.app.get_media_duration=Mock(return_value=2.)
-        self.app.has_audio_stream=Mock(return_value=True)
+        self.app.probe_audio_stream_presence=Mock(return_value=True)
         self.app.validate_video_packets=Mock(return_value=True)
         self.app.validate_converted_audio=Mock(return_value=(True,'ok',2.,2.))
         def run(cmd,*args):
@@ -153,6 +156,23 @@ class AudioPipelineFailures(unittest.TestCase):
         result=self.app.convert_videos_to_audio([str(video)],self.root)
         self.assertEqual(result,[str(self.root/'video (2).mp3')])
         self.assertEqual(old.read_bytes(),b'unrelated audio')
+
+    def test_unavailable_audio_probe_keeps_a_different_status_from_missing_audio(self):
+        video = self.root / "video.mp4"
+        video.write_bytes(b"video")
+        app = self.app
+        app.get_media_duration = Mock(return_value=2.0)
+        app.validate_video_packets = Mock(return_value=True)
+        app.save_failed_conversions_session = Mock(return_value=None)
+        app.manual_processing_dir = self.root
+        for presence, expected in ((None, "audio_error"), (False, "audio_missing")):
+            with self.subTest(presence=presence):
+                app.probe_audio_stream_presence = Mock(return_value=presence)
+                app._dashboard_session = session = DownloadSessionView(["url"])
+                session.update("url", "video", video)
+                self.assertEqual(app.convert_videos_to_audio([str(video)], self.root), [])
+                self.assertEqual(dict(session.snapshot()[1])["url"][0], expected)
+                self.assertEqual(session.media_paths("url"), (video, None))
 
     def test_second_part_publish_failure_then_retry_has_one_set(self):
         from unittest.mock import patch
@@ -255,10 +275,7 @@ class AudioPipelineFailures(unittest.TestCase):
             self.assertLess(error, 500)
 
     def test_mp3_split_bounds_windows_command_for_long_output_paths(self):
-        # Keep the full path long without exceeding the UTF-8 component limit.
-        name_chars = max(10, 203 - len(str(self.root)))
-        first_chars = name_chars // 2
-        split_dir = self.root / ('д' * first_chars) / ('д' * (name_chars - first_chars))
+        split_dir = self.root / ('д' * max(10, 205 - len(str(self.root))))
         self.app.get_decoded_audio_duration.side_effect = lambda p: 100 * 3600 if p == self.source else 3600.
         commands = []
 

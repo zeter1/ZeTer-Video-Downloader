@@ -54,6 +54,9 @@ class AudioSplitMixin:
             if len(parts) == 1:
                 shutil.copyfile(temp_file, parts[0])
             else:
+                dashboard = getattr(self, "_dashboard_session", None)
+                if dashboard is not None:
+                    dashboard.phase("Разбивка аудио на части")
                 # Each cut gets its own encoder and gapless metadata. MP3 packets
                 # copied across a cut can still depend on the previous part.
                 quality = session_setting(self, "audio_quality")

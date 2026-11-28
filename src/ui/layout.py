@@ -124,13 +124,10 @@ class UILayoutMixin:
         self.main_progress = ttk.Progressbar(hero, mode="determinate",
                                              style="Studio.Horizontal.TProgressbar")
         self.main_progress.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(5, 6))
-        self.studio_session_status = tk.StringVar(self.root, value="Готово к загрузке")
         foot = ttk.Frame(hero, style="Hero.TFrame")
         foot.grid(row=3, column=0, columnspan=2, sticky="ew")
         self.studio_speed_text = tk.StringVar(self.root, value="")
         ttk.Label(foot, textvariable=self.studio_speed_text, style="HeroStatus.TLabel").pack(side="right")
-        ttk.Label(foot, textvariable=self.studio_session_status, style="HeroStatus.TLabel",
-                  width=1).pack(side="left", fill="x", expand=True)
 
     def _studio_build_editor(self):
         win = self._studio_links_window = tool_window(self.root, "Добавить ссылки", 660, 370)
@@ -234,7 +231,6 @@ class UILayoutMixin:
                 child.bind("<MouseWheel>", wheel, add="+")
                 bind_controls(child)
 
-        self._studio_build_events(content)
         self._studio_build_settings(content)
         sidebar.bind("<Configure>", sync)
         sidebar.bind("<MouseWheel>", wheel)
@@ -244,7 +240,7 @@ class UILayoutMixin:
 
     def _studio_build_settings(self, side):
         card, box = rounded_panel(side, padx=14, pady=14)
-        card.grid(row=1, column=0, sticky="ew", pady=(14, 0))
+        card.grid(row=0, column=0, sticky="ew")
         panel_title(box, "Параметры", "settings").pack(anchor="w", pady=(0, 12))
         ttk.Label(box, text="Папка сохранения", style="SettingsHeading.TLabel").pack(anchor="w")
         path = ttk.Frame(box)
@@ -347,21 +343,6 @@ class UILayoutMixin:
         self.main_progress["value"] = 0
         self.progress_percent.configure(text="0%")
         self.refresh_download_dashboard()
-
-    def _studio_build_events(self, side):
-        card, box = rounded_panel(side, padx=14, pady=14)
-        card.grid(row=0, column=0, sticky="new")
-        box.columnconfigure(0, weight=1)
-        panel_title(box, "Последние события", "history").grid(
-            row=0, column=0, sticky="w")
-        self.studio_recent_text = tk.StringVar(self.root, value="События появятся во время работы.")
-        recent = ttk.Label(box, textvariable=self.studio_recent_text, style="Muted.TLabel",
-                           width=1, anchor="nw", justify="left", wraplength=230)
-        recent.grid(row=1, column=0, sticky="ew", pady=(9, 10))
-        recent.bind("<Configure>", lambda e: recent.configure(wraplength=max(100, e.width - 2)))
-        ttk.Separator(box).grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        ttk.Button(box, text="Открыть журнал   ›", command=self.show_studio_log).grid(
-            row=3, column=0, sticky="w")
 
     def _studio_build_log(self):
         win = self._studio_log_window = tool_window(self.root, "Журнал загрузок", 860, 510)
